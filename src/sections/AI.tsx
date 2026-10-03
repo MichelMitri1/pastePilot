@@ -31,6 +31,15 @@ export default function AI({ settings, update, status }: SectionProps) {
         </div>
       </section>
 
+      <section className="field">
+        <label>GitHub Debug model</label>
+        <input list="models" value={settings.debugModel} onChange={(e) => update("debugModel", e.target.value)} />
+        <span className="muted small">
+          Used to read code in GitHub Debug Mode. gpt-4.1-mini is fast; gpt-4.1 is slower but catches subtler bugs.
+          Replies always use the main model and your writing style.
+        </span>
+      </section>
+
       <h3>Mode instructions</h3>
       {MODES.map((m) => (
         <section key={m.id}>

@@ -1,0 +1,23 @@
+.debug { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; height: 100%; overflow-y: auto; }
+.debug header { display: flex; flex-direction: column; gap: 2px; }
+.debug .files { display: flex; flex-direction: column; gap: 6px; }
+.debug .files .add { align-self: flex-start; }
+.debug .error-banner { color: var(--error); }
+.debug .results { gap: 10px; }
+.debug .results p { margin: 0; }
+.debug .confidence { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+.debug .confidence.high { background: rgba(48, 209, 88, 0.18); color: var(--ok); }
+.debug .confidence.medium { background: rgba(255, 159, 10, 0.2); color: #c27400; }
+.debug .confidence.low { background: rgba(255, 69, 58, 0.15); color: var(--error); }
+.debug .finding { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.debug .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; text-align: left; }
+.debug .snippet {
+  margin: 0; padding: 8px 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  font: 12px/1.5 ui-monospace, Menlo, monospace; overflow-x: auto; -webkit-user-select: text; user-select: text;
+}
+.debug .snippet div { padding: 0 10px 0 0; white-space: pre; }
+.debug .snippet .hot { background: rgba(10, 132, 255, 0.14); }
+.debug .snippet .ln { display: inline-block; width: 40px; padding-right: 10px; text-align: right; color: var(--muted); -webkit-user-select: none; user-select: none; }
+.debug details summary { cursor: default; }
+.debug .examined { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.debug textarea[readonly] { opacity: 0.85; }

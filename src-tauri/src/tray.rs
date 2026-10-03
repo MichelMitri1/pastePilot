@@ -17,6 +17,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let sep = || PredefinedMenuItem::separator(app);
 
     let generate = MenuItem::with_id(app, "generate", "Generate Reply", true, None::<&str>)?;
+    let github_debug = MenuItem::with_id(app, "github_debug", "GitHub Debug…", true, None::<&str>)?;
 
     let rewrite_items: Vec<MenuItem<Wry>> = RewriteAction::ALL
         .iter()
@@ -58,6 +59,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         app,
         &[
             &generate,
+            &github_debug,
             &rewrite,
             &modes,
             &sep()?,
@@ -87,6 +89,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
 fn on_menu(app: &AppHandle, id: &str) {
     match id {
         "generate" => flow::trigger(app.clone(), Trigger::Menu),
+        "github_debug" => crate::debug::open(app.clone(), true),
         "settings" => windows::open_settings(app),
         "save_example" => flow::save_last_as_example(app),
         "new_conversation" => flow::new_conversation(app),

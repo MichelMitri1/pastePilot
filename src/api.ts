@@ -34,6 +34,8 @@ export interface Settings {
   rewriteBar: boolean;
   rewriteShortcuts: boolean;
   newConversationShortcut: string;
+  debugShortcut: string;
+  debugModel: string;
 }
 
 export interface Status {
@@ -99,3 +101,50 @@ export const getMemory = () => invoke<MemoryStatus>("get_memory");
 export const newConversation = () => invoke<void>("new_conversation");
 export const clearCurrentConversation = () => invoke<void>("clear_current_conversation");
 export const clearAllConversations = () => invoke<void>("clear_all_conversations");
+
+// ----- GitHub Debug Mode -----
+
+export interface DebugContext {
+  issue: string;
+  repoUrl: string;
+  hasTarget: boolean;
+  conversation: string | null;
+  historyCount: number;
+}
+
+export interface Snippet {
+  startLine: number;
+  lines: string[];
+  highlightStart: number;
+  highlightEnd: number;
+}
+
+export interface Finding {
+  file: string;
+  url: string | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  cause: string;
+  fix: string;
+  snippet: Snippet | null;
+}
+
+export interface Analysis {
+  repo: string;
+  status: "found" | "uncertain";
+  confidence: "high" | "medium" | "low";
+  summary: string;
+  findings: Finding[];
+  missingInfo: string;
+  examined: { path: string; url: string; lines: number; truncated: boolean }[];
+  notes: string[];
+  mode: string;
+}
+
+export const debugGetContext = () => invoke<DebugContext>("debug_get_context");
+export const debugAnalyze = (request: { repoUrl: string; issue: string; files: string[] }) =>
+  invoke<Analysis>("debug_analyze", { request });
+export const debugGenerateReply = () => invoke<string>("debug_generate_reply");
+export const debugPaste = (reply: string) => invoke<void>("debug_paste", { reply });
+export const debugCopy = (reply: string) => invoke<void>("debug_copy", { reply });
+export const openGithubUrl = (url: string) => invoke<void>("open_github_url", { url });

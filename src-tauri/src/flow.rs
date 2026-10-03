@@ -35,7 +35,7 @@ pub enum Followup {
     Mode(Mode),
 }
 
-enum Delivery {
+pub(crate) enum Delivery {
     Pasted,
     /// Auto-paste is on but there was no text input to paste into.
     CopiedNoInput,
@@ -218,7 +218,7 @@ fn prepare(db: &Db, settings: &Settings, text: &str, scope: Option<&Scope>, fres
 }
 
 /// Mode instructions + the knowledge entries and examples relevant to this message.
-fn build_context(db: &Db, settings: &Settings, text: &str, history: &[Turn], mode: Mode) -> String {
+pub(crate) fn build_context(db: &Db, settings: &Settings, text: &str, history: &[Turn], mode: Mode) -> String {
     // Short follow-ups ("I sent it above") borrow search terms from the previous student turn.
     let mut query = text.to_string();
     if let Some(prev) = history.iter().rev().find(|t| t.role == Role::Student) {
@@ -240,7 +240,7 @@ fn build_context(db: &Db, settings: &Settings, text: &str, history: &[Turn], mod
 
 /// Watches the reply box so the version you actually send (with your edits)
 /// replaces the generated one in conversation memory.
-fn watch_for_send(
+pub(crate) fn watch_for_send(
     app: &AppHandle,
     pid: i32,
     input: Option<ax::Element>,
@@ -256,7 +256,7 @@ fn watch_for_send(
 /// Puts the reply on the clipboard and, if possible, pastes it into the text
 /// input the user was using. Never presses Return.
 /// Also returns the text input the reply went into (or will likely be pasted into).
-fn deliver(pid: i32, reply: &str, auto_paste: bool) -> (Delivery, Option<ax::Element>) {
+pub(crate) fn deliver(pid: i32, reply: &str, auto_paste: bool) -> (Delivery, Option<ax::Element>) {
     pasteboard::write_string(reply);
     if !auto_paste {
         return (Delivery::Copied, focus_tracker::remembered_input(pid));

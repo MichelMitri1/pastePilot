@@ -8,6 +8,9 @@
 //! - retrieval.rs  knowledge base / reply example search, style profile
 //! - rewrite.rs    quick rewrites, replacing the pasted reply in place
 //! - sent_watch.rs saves the reply you actually sent (with edits) to memory
+//! - debug.rs      GitHub Debug Mode pipeline (read-only repo analysis → reply)
+//! - github.rs     public GitHub API client + cache
+//! - repo_search.rs  file filtering, filename search, import following
 //! - db.rs         SQLite schema, migrations, queries
 //! - import.rs     bulk import parsers
 //! - openai.rs     streaming Chat Completions client
@@ -23,7 +26,9 @@
 
 mod commands;
 mod db;
+mod debug;
 mod flow;
+mod github;
 mod import;
 mod keychain;
 mod macos;
@@ -31,6 +36,7 @@ mod memory;
 mod modes;
 mod openai;
 mod prompt;
+mod repo_search;
 mod retrieval;
 mod rewrite;
 mod selection;
@@ -83,6 +89,12 @@ pub fn run() {
             commands::new_conversation,
             commands::clear_current_conversation,
             commands::clear_all_conversations,
+            debug::debug_get_context,
+            debug::debug_analyze,
+            debug::debug_generate_reply,
+            debug::debug_paste,
+            debug::debug_copy,
+            debug::open_github_url,
         ])
         .setup(|app| {
             // Menu bar only: no Dock icon, never steals focus on launch.

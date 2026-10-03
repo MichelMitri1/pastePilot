@@ -29,9 +29,12 @@ fn register(app: &AppHandle, accelerator: &str) -> Result<(), String> {
 /// Registers the always-on hotkeys from settings.
 pub fn register_all(app: &AppHandle, settings: &Settings) -> Result<(), String> {
     register(app, &settings.shortcut)?;
-    let extra = settings.new_conversation_shortcut.trim();
-    if !extra.is_empty() && extra != settings.shortcut {
-        register(app, extra)?;
+    let mut used = vec![settings.shortcut.clone()];
+    for extra in [settings.new_conversation_shortcut.trim(), settings.debug_shortcut.trim()] {
+        if !extra.is_empty() && !used.iter().any(|u| u == extra) {
+            register(app, extra)?;
+            used.push(extra.to_string());
+        }
     }
     Ok(())
 }
@@ -39,10 +42,14 @@ pub fn register_all(app: &AppHandle, settings: &Settings) -> Result<(), String> 
 /// Validates and swaps hotkeys, restoring the old ones if the new ones fail.
 pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) -> Result<(), String> {
     parse(&new.shortcut)?;
-    if !new.new_conversation_shortcut.trim().is_empty() {
-        parse(new.new_conversation_shortcut.trim())?;
-        if new.new_conversation_shortcut.trim() == new.shortcut {
-            return Err("The two shortcuts must be different.".into());
+    let all = [new.shortcut.trim(), new.new_conversation_shortcut.trim(), new.debug_shortcut.trim()];
+    for (i, s) in all.iter().enumerate() {
+        if s.is_empty() {
+            continue;
+        }
+        parse(s)?;
+        if all[..i].contains(s) {
+            return Err("Each shortcut must be different.".into());
         }
     }
     let gs = app.global_shortcut();
@@ -78,6 +85,8 @@ pub fn dispatch(app: &AppHandle, pressed: &Shortcut) {
         flow::trigger(app.clone(), Trigger::Hotkey);
     } else if !settings.new_conversation_shortcut.trim().is_empty() && matches(settings.new_conversation_shortcut.trim()) {
         flow::trigger(app.clone(), Trigger::NewConversation);
+    } else if !settings.debug_shortcut.trim().is_empty() && matches(settings.debug_shortcut.trim()) {
+        crate::debug::open(app.clone(), false);
     } else if let Some(action) = RewriteAction::ALL.into_iter().find(|a| matches(a.shortcut())) {
         if REWRITE_KEYS_ON.load(Ordering::SeqCst) {
             flow::trigger_followup(app.clone(), Followup::Rewrite(action));

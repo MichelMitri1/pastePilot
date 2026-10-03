@@ -53,6 +53,43 @@ A small status pill shows progress and the detected mode, for example "Generatin
 - **Replaced in place.** The old reply is found in the text box, selected, checked, and pasted over. If you already edited it, the new version only goes to the clipboard.
 - **Temporary keys.** ⌥1–⌥5 are only taken while the bar is visible, which is 30 seconds after a reply.
 
+### GitHub Debug Mode
+Use it for small bugs in a student's **public** GitHub repo, without cloning anything.
+
+1. Select the student's message and press **⌥G**, or choose **GitHub Debug…** in the menu bar. The message is filled in automatically. If the student pasted a repo link in the message or earlier in the chat, the URL is filled in too.
+2. Paste or confirm the repository URL. You can optionally add file names you suspect, like `Navbar.jsx` or `src/styles.css`.
+3. Click **Analyze Repository** or press ⌘↩. PastePilot reads only the relevant files and shows:
+   - the likely cause and the suggested fix
+   - the file and line, with a short snippet taken from the real file
+   - a **High**, **Medium** or **Low** confidence rating
+4. It then writes the reply in your normal style, using your writing style, mode, knowledge base, examples and conversation memory. You can edit it.
+5. Click **Paste Reply** or press ⌘⇧↩. The window closes, and the reply is pasted into your support chat without being sent. The rewrite bar and send detection work as usual.
+
+**How files are chosen:**
+1. **Names you typed** are resolved, so "navbar" finds `src/components/Navbar.jsx`.
+2. **Filename search** matches the issue text. "About component" finds `About.jsx`, `About/index.tsx` and `components/About.jsx`.
+3. **Topic files** are added. Routing issues bring in the App or router file, dependency errors bring in `package.json`, build issues bring in the Vite or webpack config, and a blank page brings in `index.html` and the main entry.
+4. **One level of imports** is followed: the component's stylesheet for styling issues, and imported modules named in the issue.
+5. **The AI can ask for up to 4 more files, twice at most.** Everything is capped:
+
+| Limit | Value |
+|---|---|
+| Files per analysis | 12 |
+| Characters per file | 20,000 |
+| Characters in total | 70,000 |
+
+**When it isn't sure,** it says so with "No confident diagnosis", and the reply asks the student for the missing information instead of guessing.
+
+**Safety:**
+- **Read-only.** It never pushes, never opens pull requests, and never runs code or npm scripts. Analysis is static only.
+- **Repo content is untrusted.** The analyzer is told to ignore any instructions in the code or the student's message. The reply writer only receives the structured diagnosis, never the raw files.
+
+**GitHub usage:**
+- **One REST API call per analysis** fetches the file tree. Asking for `HEAD` resolves the default branch, so there's no extra lookup.
+- **File contents come from `raw.githubusercontent.com`,** which doesn't count toward GitHub's limit of 60 anonymous requests per hour.
+- **Caching.** Trees are cached for 3 minutes. Files are cached by their content hash, so a re-analysis is instant and never stale.
+- **Private repos.** The client already accepts a token, but this version doesn't expose it, so private repositories show "Repository not found".
+
 ## Prompt pipeline
 
 ```
@@ -71,11 +108,15 @@ src/                         React Settings window
   api.ts                     typed wrappers for Rust commands
   components/common.tsx      shortcut recorder, confirm button, toggles
   sections/                  General, AI, Style, Examples, Knowledge, Memory, Shortcuts
+  debug/DebugApp.tsx         GitHub Debug window (same bundle, chosen by window label)
 src-tauri/src/
   flow.rs        ★ generate + rewrite workflows (never presses Return)
   memory.rs      conversation scoping, de-duplication, history size limit
   modes.rs       classifier + default mode instructions
   retrieval.rs   FTS5 search for knowledge + examples, style profile
+  debug.rs       GitHub Debug Mode: file planning, analysis, diagnosis, reply, paste
+  github.rs      read-only GitHub client (tree API + raw files), URL parsing, cache
+  repo_search.rs file filtering, filename/path search, topic files, import resolution
   rewrite.rs     rewrite actions, find-and-replace the pasted reply
   sent_watch.rs  saves the reply you actually sent (with edits) to memory
   prompt.rs      prompt pipeline, reply cleanup
@@ -176,6 +217,7 @@ None are required.
 
 ```bash
 cd src-tauri && cargo test
+cd src-tauri && cargo test live_ -- --ignored   # live check against a real public GitHub repo
 ```
 
 They cover memory scoping and isolation, the history size limit, de-duplication, the npm "I sent it above" scenario, mode classification, knowledge and example relevance, billing guardrails, import formats, in-place rewrite matching, the stream parser and migrations.
@@ -187,6 +229,8 @@ They cover memory scoping and isolation, the history size limit, de-duplication,
 4. **Knowledge base.** Add a "Refund policy" entry and repeat step 3. The reply now uses it.
 5. **Rewrites.** After a reply is pasted, press ⌥1. The reply in the box is replaced with a shorter version, and nothing is sent.
 6. **Examples.** Edit a pasted reply, click ★ Save, and check that it appears under Reply Examples.
+7. **GitHub Debug.** Push a tiny React app with a bug to a public repo, for example `display: none` on `.navbar` inside a mobile media query. Select a message like "my navbar disappears on my phone" and press ⌥G. Paste the URL and click Analyze. It should point to the CSS line with High or Medium confidence. Click Paste Reply and check that the reply lands in the chat box unsent.
+8. **GitHub errors.** Try a misspelled repo, which shows "Repository not found". Try a file name that doesn't exist, which adds the note "That file could not be found".
 
 ## Known limitations
 
@@ -194,4 +238,6 @@ They cover memory scoping and isolation, the history size limit, de-duplication,
 - **Detecting a send relies on the reply box emptying.** If you clear the box yourself with select-all and delete, that also counts as "sent". If the text can't be read, the generated draft is kept.
 - **Rich editors that reformat text heavily** may stop in-place rewrites from finding the old reply. You then get "New version copied" and paste it yourself.
 - **Firefox** exposes less through Accessibility than Chrome or Safari, so remembering the reply box and in-place rewrites work best in Chromium browsers and Safari.
+- **GitHub Debug only reads public repositories** and does static analysis, so it can't see runtime errors, environment variables or anything that isn't pushed. Large repositories may only be partly listed by GitHub.
+- **Without sign-in, GitHub allows 60 file-list requests per hour.** That's about 60 analyses of different repos, and re-analyzing a repo within 3 minutes uses the cache.
 - **Unsigned builds** need the Keychain and Accessibility re-approval described above after every rebuild. An Apple Developer ID removes this.

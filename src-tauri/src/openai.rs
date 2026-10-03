@@ -41,21 +41,58 @@ impl OpenAi {
 
     /// Streams a reply and returns the full text once the stream ends.
     pub async fn generate(&self, api_key: &str, model: &str, messages: &[Value]) -> Result<String, String> {
+        self.generate_streaming(api_key, model, messages, |_| {}).await
+    }
+
+    /// Like `generate`, calling `on_delta` with each new piece of text as it arrives.
+    pub async fn generate_streaming(
+        &self,
+        api_key: &str,
+        model: &str,
+        messages: &[Value],
+        on_delta: impl FnMut(&str),
+    ) -> Result<String, String> {
+        let body = json!({
+            "model": model,
+            "stream": true,
+            "store": false,
+            "max_completion_tokens": MAX_OUTPUT_TOKENS,
+            "messages": messages
+        });
+        let resp = self.send(api_key, model, body).await?;
+        read_stream(resp, on_delta).await
+    }
+
+    /// One non-streamed call that must answer with a JSON object.
+    pub async fn complete_json(&self, api_key: &str, model: &str, messages: &[Value], max_tokens: u32) -> Result<Value, String> {
+        let body = json!({
+            "model": model,
+            "store": false,
+            "max_completion_tokens": max_tokens,
+            "response_format": { "type": "json_object" },
+            "messages": messages
+        });
+        let resp = self.send(api_key, model, body).await?;
+        let text = resp.text().await.map_err(|e| network_error(&e))?;
+        let v: Value = serde_json::from_str(&text).map_err(|_| "OpenAI returned an unreadable response.".to_string())?;
+        let content = v["choices"][0]["message"]["content"].as_str().unwrap_or_default();
+        serde_json::from_str(content).map_err(|_| "OpenAI returned an unreadable analysis. Try again.".to_string())
+    }
+
+    /// POSTs to Chat Completions, adding the lowest reasoning effort the model allows
+    /// (and dropping it for models that reject it).
+    async fn send(&self, api_key: &str, model: &str, mut body: Value) -> Result<reqwest::Response, String> {
         let skip_reasoning = self.no_reasoning_param.lock().map(|s| s.contains(model)).unwrap_or(false);
         let mut effort = if skip_reasoning { None } else { reasoning_effort(model) };
-
         loop {
-            let mut body = json!({
-                "model": model,
-                "stream": true,
-                "store": false,
-                "max_completion_tokens": MAX_OUTPUT_TOKENS,
-                "messages": messages
-            });
-            if let Some(e) = effort {
-                body["reasoning_effort"] = json!(e);
+            match effort {
+                Some(e) => body["reasoning_effort"] = json!(e),
+                None => {
+                    if let Some(obj) = body.as_object_mut() {
+                        obj.remove("reasoning_effort");
+                    }
+                }
             }
-
             let resp = self
                 .client
                 .post(format!("{API_BASE}/chat/completions"))
@@ -67,22 +104,22 @@ impl OpenAi {
                 .map_err(|e| network_error(&e))?;
 
             let status = resp.status();
-            if !status.is_success() {
-                let text = resp.text().await.unwrap_or_default();
-                let message = serde_json::from_str::<Value>(&text)
-                    .ok()
-                    .and_then(|v| v["error"]["message"].as_str().map(str::to_owned))
-                    .unwrap_or_default();
-                if status.as_u16() == 400 && effort.is_some() && message.contains("reasoning") {
-                    if let Ok(mut set) = self.no_reasoning_param.lock() {
-                        set.insert(model.to_owned());
-                    }
-                    effort = None;
-                    continue;
-                }
-                return Err(http_error(status.as_u16(), &message));
+            if status.is_success() {
+                return Ok(resp);
             }
-            return read_stream(resp).await;
+            let text = resp.text().await.unwrap_or_default();
+            let message = serde_json::from_str::<Value>(&text)
+                .ok()
+                .and_then(|v| v["error"]["message"].as_str().map(str::to_owned))
+                .unwrap_or_default();
+            if status.as_u16() == 400 && effort.is_some() && message.contains("reasoning") {
+                if let Ok(mut set) = self.no_reasoning_param.lock() {
+                    set.insert(model.to_owned());
+                }
+                effort = None;
+                continue;
+            }
+            return Err(http_error(status.as_u16(), &message));
         }
     }
 }
@@ -102,7 +139,7 @@ fn reasoning_effort(model: &str) -> Option<&'static str> {
 }
 
 /// Parses server-sent events: `data: {json}` lines, terminated by `data: [DONE]`.
-async fn read_stream(resp: reqwest::Response) -> Result<String, String> {
+async fn read_stream(resp: reqwest::Response, mut on_delta: impl FnMut(&str)) -> Result<String, String> {
     let mut stream = resp.bytes_stream();
     let mut buf: Vec<u8> = Vec::with_capacity(4096);
     let mut out = String::new();
@@ -113,7 +150,10 @@ async fn read_stream(resp: reqwest::Response) -> Result<String, String> {
         while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
             let line: Vec<u8> = buf.drain(..=pos).collect();
             match parse_sse_line(&line) {
-                SseLine::Delta(text) => out.push_str(&text),
+                SseLine::Delta(text) => {
+                    on_delta(&text);
+                    out.push_str(&text);
+                }
                 SseLine::Done => return Ok(out),
                 SseLine::Error(msg) => return Err(format!("OpenAI error: {msg}")),
                 SseLine::Other => {}

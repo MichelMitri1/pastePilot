@@ -10,6 +10,7 @@ use std::path::Path;
 pub const DEFAULT_MODEL: &str = "gpt-4.1-mini";
 pub const DEFAULT_SHORTCUT: &str = "Alt+R";
 pub const DEFAULT_NEW_CONVERSATION_SHORTCUT: &str = "Alt+Shift+R";
+pub const DEFAULT_DEBUG_SHORTCUT: &str = "Alt+G";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -48,6 +49,12 @@ pub struct Settings {
     pub rewrite_shortcuts: bool,
     /// Starts a fresh conversation, then generates. Empty = none.
     pub new_conversation_shortcut: String,
+
+    // GitHub Debug Mode
+    /// Opens GitHub Debug Mode. Empty = none.
+    pub debug_shortcut: String,
+    /// Model for code analysis (empty = same as `model`).
+    pub debug_model: String,
 }
 
 impl Default for Settings {
@@ -74,6 +81,8 @@ impl Default for Settings {
             rewrite_bar: true,
             rewrite_shortcuts: true,
             new_conversation_shortcut: DEFAULT_NEW_CONVERSATION_SHORTCUT.into(),
+            debug_shortcut: DEFAULT_DEBUG_SHORTCUT.into(),
+            debug_model: DEFAULT_MODEL.into(),
         }
     }
 }

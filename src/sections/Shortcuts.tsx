@@ -24,6 +24,13 @@ export default function Shortcuts({ settings, update }: SectionProps) {
             <button className="link" onClick={() => update("newConversationShortcut", "")}>None</button>
           </div>
         </div>
+        <div className="field">
+          <label>GitHub Debug</label>
+          <div className="row">
+            <ShortcutInput value={settings.debugShortcut} onChange={(v) => update("debugShortcut", v)} />
+            <button className="link" onClick={() => update("debugShortcut", "")}>None</button>
+          </div>
+        </div>
       </section>
       <p className="muted small">Click a field and press the new key combination. Changes apply when you click Save.</p>
 
