@@ -53,6 +53,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let memory = CheckMenuItem::with_id(app, "memory", "Conversation Memory", true, settings.memory_enabled, None::<&str>)?;
     let auto_paste = CheckMenuItem::with_id(app, "auto_paste", "Auto Paste", true, settings.auto_paste, None::<&str>)?;
     let open_settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+    let check_updates = MenuItem::with_id(app, "check_updates", "Check for Updates…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit PastePilot", true, None::<&str>)?;
 
     let menu = Menu::with_items(
@@ -69,6 +70,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &auto_paste,
             &sep()?,
             &open_settings,
+            &check_updates,
             &quit,
         ],
     )?;
@@ -91,6 +93,11 @@ fn on_menu(app: &AppHandle, id: &str) {
         "generate" => flow::trigger(app.clone(), Trigger::Menu),
         "github_debug" => crate::debug::open(app.clone(), true),
         "settings" => windows::open_settings(app),
+        "check_updates" => {
+            // The General page checks for updates as soon as it opens.
+            windows::open_settings(app);
+            let _ = app.emit_to(windows::SETTINGS_LABEL, "check-updates", ());
+        }
         "save_example" => flow::save_last_as_example(app),
         "new_conversation" => flow::new_conversation(app),
         "clear_conversation" => flow::clear_current_conversation(app),

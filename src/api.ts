@@ -148,3 +148,15 @@ export const debugGenerateReply = () => invoke<string>("debug_generate_reply");
 export const debugPaste = (reply: string) => invoke<void>("debug_paste", { reply });
 export const debugCopy = (reply: string) => invoke<void>("debug_copy", { reply });
 export const openGithubUrl = (url: string) => invoke<void>("open_github_url", { url });
+
+// ----- Updates -----
+
+export interface UpdateInfo {
+  current: string;
+  available: boolean;
+  version: string | null;
+  notes: string | null;
+}
+
+export const checkForUpdate = () => invoke<UpdateInfo>("check_for_update");
+export const installUpdate = () => invoke<void>("install_update");

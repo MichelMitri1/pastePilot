@@ -1,6 +1,6 @@
 # PastePilot
 
-[PastePilot_0.1.0_aarch64.dmg](https://github.com/MichelMitri1/pastePilot/releases/download/v1.0.0/PastePilot_0.1.0_aarch64.dmg)
+**[Download PastePilot for Mac (Apple Silicon)](https://github.com/MichelMitri1/pastePilot/releases/latest/download/PastePilot.dmg)**. After that, the app updates itself from the menu bar with **Check for Updates…**.
 
 A macOS menu bar app that drafts support replies in your voice.
 
@@ -132,7 +132,8 @@ src-tauri/src/
   tray.rs        menu bar menu
   commands.rs    Settings UI commands
   keychain.rs    API key in Keychain
-  windows.rs     Settings window
+  updater.rs     in-app updates (check, download, verify, install, restart)
+  windows.rs     Settings and GitHub Debug windows
   macos/
     ax.rs             Accessibility: selection, editable check, URL/title, text ranges
     action_bar.rs     native rewrite bar (non-activating panel)
@@ -186,7 +187,34 @@ npx tauri build             # .app + .dmg
 cd src-tauri && cargo test  # unit tests
 ```
 
-### Install or upgrade
+### Releasing an update
+
+Installed copies of PastePilot update themselves. Under **Settings → General → Updates**, or **Check for Updates…** in the menu bar, there's one-click **Download and install**, and the app restarts on the new version. It also checks quietly twice a day and shows a notice when there's something new.
+
+To publish a new version:
+
+```bash
+git add -A && git commit -m "Your changes" && git push   # the release must match what's pushed
+npm run release -- 1.2.0 "What changed"                  # version must be higher than the last one
+```
+
+The script does the following:
+1. Bumps the version in `package.json`, `tauri.conf.json` and `Cargo.toml`.
+2. Builds the `.app` and `.dmg`.
+3. Signs the update.
+4. Writes `latest.json`.
+5. Commits, tags and pushes.
+6. Creates the GitHub release with `PastePilot.app.tar.gz`, `PastePilot.dmg` and `latest.json`.
+
+Add `--dry-run` to build and sign without publishing anything.
+
+**One-time setup:**
+- **Log in to GitHub:** `gh auth login`.
+- **The signing key** is at `~/.tauri/pastepilot.key`, created once and never committed. The app only installs updates signed with this key. **Back it up**, for example in your password manager. If it's lost, existing installs can't receive updates and would need one manual reinstall with a new key.
+
+**How it works:** the app reads `https://github.com/MichelMitri1/pastePilot/releases/latest/download/latest.json` and compares versions. It then downloads `PastePilot.app.tar.gz`, verifies the signature against the public key in `tauri.conf.json`, replaces itself and restarts. It never runs anything unsigned.
+
+### Install or upgrade manually
 
 Quit PastePilot from the menu bar first, then run:
 

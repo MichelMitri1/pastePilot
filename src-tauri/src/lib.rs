@@ -20,7 +20,8 @@
 //! - state.rs      shared in-memory state
 //! - shortcut.rs   global hotkey
 //! - tray.rs       menu bar icon and menu
-//! - windows.rs    Settings window
+//! - updater.rs    in-app updates from GitHub Releases
+//! - windows.rs    Settings and GitHub Debug windows
 //! - commands.rs   commands called by the React Settings UI
 //! - macos/        Accessibility, key events, clipboard, app focus, HUD, rewrite bar
 
@@ -45,6 +46,7 @@ mod settings;
 mod shortcut;
 mod state;
 mod tray;
+mod updater;
 mod windows;
 
 use macos::{ax, focus_tracker, hud};
@@ -66,6 +68,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::save_settings,
@@ -95,6 +98,8 @@ pub fn run() {
             debug::debug_paste,
             debug::debug_copy,
             debug::open_github_url,
+            updater::check_for_update,
+            updater::install_update,
         ])
         .setup(|app| {
             // Menu bar only: no Dock icon, never steals focus on launch.
@@ -123,6 +128,8 @@ pub fn run() {
             if needs_setup {
                 windows::open_settings(&handle);
             }
+
+            updater::start_background_checks(&handle);
 
             let warm = handle.clone();
             tauri::async_runtime::spawn(async move {

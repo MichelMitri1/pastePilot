@@ -1,6 +1,7 @@
 import { useState } from "react";
 import * as api from "../api";
 import { Toggle } from "../components/common";
+import Updates from "../components/Updates";
 import type { SectionProps } from "./types";
 
 export default function General({ settings, update, status, refreshStatus, flash }: SectionProps) {
@@ -65,6 +66,8 @@ export default function General({ settings, update, status, refreshStatus, flash
           Launch at login
         </Toggle>
       </section>
+
+      <Updates />
     </>
   );
 }

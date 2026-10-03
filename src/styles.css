@@ -103,3 +103,6 @@ button.danger.armed { background: var(--error); border-color: var(--error); colo
 
 .ok { color: var(--ok); }
 .error { color: var(--error); }
+
+progress { width: 100%; accent-color: var(--accent); }
+.notes { white-space: pre-wrap; margin: 0; }

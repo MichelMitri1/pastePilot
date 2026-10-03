@@ -42,9 +42,12 @@ export default function App() {
       setSettings(e.payload);
       setSaved(e.payload);
     });
+    // "Check for Updates…" in the menu bar: show the General page, where the Updates panel lives.
+    const unlistenUpdates = listen("check-updates", () => setSection("general"));
     return () => {
       window.removeEventListener("focus", refreshStatus);
       unlisten.then((f) => f());
+      unlistenUpdates.then((f) => f());
     };
   }, [refreshStatus]);
 
