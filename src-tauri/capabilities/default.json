@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Settings window: core APIs (events) only. App commands are defined in commands.rs.",
+  "windows": ["settings"],
+  "permissions": ["core:default"]
+}
