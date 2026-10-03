@@ -259,6 +259,15 @@ Add `--dry-run` to build and sign without publishing anything.
 
 **How it works:** the app reads `https://github.com/MichelMitri1/pastePilot/releases/latest/download/latest.json` and compares versions. It then downloads `PastePilot.app.tar.gz`, verifies the signature against the public key in `tauri.conf.json`, replaces itself and restarts. It never runs anything unsigned.
 
+### Why permissions survive updates
+
+macOS remembers Accessibility, Microphone and Keychain approvals by the app's **code signature**. Every build is signed with the same certificate, "PastePilot Local Signing", which lives in your login Keychain. So macOS sees each update as the same app and doesn't ask again.
+
+- **One-time setup per Mac:** run `npm run setup-signing`. It creates the certificate, and the private key stays in your Keychain. The first time a build is signed, macOS asks whether `codesign` may use the key. Enter your login password and click **Always Allow**.
+- **Builds use it automatically.** It's configured as `bundle.macOS.signingIdentity` in `tauri.conf.json`, with hardened runtime and `Entitlements.plist` for the microphone. `npm run release` refuses to build without it.
+- **Building on a new Mac** means running `npm run setup-signing` there. That creates a different certificate, so installed apps ask for permissions **once** more after the first update from that Mac.
+- **This doesn't affect other people's Gatekeeper warning.** The certificate is self-signed, so a first launch on someone else's Mac still needs "Open Anyway". That would need an Apple Developer ID.
+
 ### Install or upgrade manually
 
 Quit PastePilot from the menu bar first, then run:
@@ -269,7 +278,7 @@ cp -R src-tauri/target/release/bundle/macos/PastePilot.app /Applications/
 open /Applications/PastePilot.app
 ```
 
-After each new build, expect two things:
+If you install a build that isn't signed with the PastePilot certificate, expect two things:
 - **Keychain prompt.** macOS asks whether PastePilot may read its Keychain item. Enter your Mac login password and click **Always Allow**.
 - **Accessibility may stop working.** If it does, remove PastePilot from System Settings → Privacy & Security → Accessibility, add it again, and restart the app. You can also reset it with `tccutil reset Accessibility com.pastepilot.app`.
 

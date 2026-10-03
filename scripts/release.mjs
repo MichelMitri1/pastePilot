@@ -50,6 +50,11 @@ if (!/^\d+\.\d+\.\d+$/.test(version ?? "")) fail('Give a version like: npm run r
 const current = JSON.parse(fs.readFileSync(FILES.conf, "utf8")).version;
 if (!newer(version, current)) fail(`Version must be higher than the current ${current}.`);
 if (!fs.existsSync(KEY)) fail(`Signing key not found at ${KEY}. Without it, installed apps won't accept updates.`);
+// Code-signing identity: keeps macOS permissions (Accessibility, Keychain, Microphone) across updates.
+const identity = JSON.parse(fs.readFileSync(FILES.conf, "utf8")).bundle?.macOS?.signingIdentity;
+if (identity && spawnSync("security", ["find-certificate", "-c", identity], { stdio: "ignore" }).status !== 0) {
+  fail(`Code-signing identity "${identity}" isn't in your Keychain. Run: npm run setup-signing`);
+}
 if (!dryRun) {
   if (git("status", "--porcelain")) fail("Commit or stash your changes first, so the release matches what's pushed.");
   if (!has("gh")) fail("Install the GitHub CLI first: brew install gh");

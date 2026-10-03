@@ -32,7 +32,10 @@
       "icons/icon.png"
     ],
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "PastePilot Local Signing",
+      "entitlements": "./Entitlements.plist",
+      "hardenedRuntime": true
     }
   },
   "plugins": {
