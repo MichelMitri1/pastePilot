@@ -1,5 +1,7 @@
 # PastePilot
 
+PastePilot_0.1.0_aarch64.dmg
+
 A macOS menu bar app that drafts support replies in your voice.
 
 **Select a student's message → press ⌥R → the reply appears in the chat input.**
