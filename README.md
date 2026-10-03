@@ -92,6 +92,34 @@ Use it for small bugs in a student's **public** GitHub repo, without cloning any
 - **Caching.** Trees are cached for 3 minutes. Files are cached by their content hash, so a re-analysis is instant and never stale.
 - **Private repos.** The client already accepts a token, but this version doesn't expose it, so private repositories show "Repository not found".
 
+### Debugging power-ups
+- **Screenshots.** Paste one with ⌘V, drop it in, or choose up to three in the GitHub Debug window. They're downscaled locally and sent with the analysis. Without a repo URL, PastePilot can diagnose from the screenshot and message alone.
+- **Auto-detected repo URL.** The URL is picked up from the selected message or earlier in the conversation. After ⌥R, if the message had a repo link, the status pill offers ⌥G.
+- **Auto-detected files.** File paths in error messages and stack traces are read first, for example `Can't resolve './components/Header'` or `src/App.jsx:12:5`. Then come filename search, topic files, framework entry points (Next.js `app/`, Vue router, vanilla `index.html`), and one level of imports.
+- **Project type detection.** It reads `package.json` and the file list to tell React, Next.js (App or Pages Router), Vue, Svelte, Angular, Vite, CRA, TypeScript, Tailwind, React Router, vanilla HTML/CSS and more apart. The analysis follows that stack's conventions.
+- **Local code checks.** These run in milliseconds and nothing is executed. They're passed to the AI as verified facts:
+  - imports that don't resolve
+  - **import casing** that works on a Mac but breaks on Netlify or Vercel
+  - default or named imports the file doesn't export
+  - packages missing from `package.json`
+  - JSX mistakes: `class=`, `for=`, `onclick=`, string `style=`, lowercase components
+  - unclosed or misnested HTML tags, and broken links to CSS, JS or images
+  - unbalanced CSS braces
+  - invalid `package.json`
+- **Commit comparison.** It reads the 3 most recent commits with their diffs for the files involved. This turns on by itself when the student says it "was working" or "broke after", and can always be on.
+- **Before/after diff and snippets.** Each finding shows the real lines from the file next to the proposed fix. You can copy the fix or **include the snippet in the reply** with one checkbox.
+- **Ask-for-missing-info.** Low confidence is never presented as an answer. The reply asks for exactly what's missing, such as the console error, which page, or a screenshot, and the guessed cause stays out of the reply.
+- **Issue history.** Every diagnosis is stored by repo and conversation. Similar past cases show as "Seen before" and are given to the analysis.
+- **Fix library.** Searchable, reusable fixes, with add, edit, import, and **Save as fix** from any diagnosis. Relevant ones are offered to the analysis, and the ones it used are marked ✓.
+
+### Workflow extras
+- **Multi-message cases.** Select a message, press **⌥A**, and repeat. The next ⌥R or ⌥G treats all of them as one case. You can also pick messages in Clipboard History and click **Add to case**. A case never carries over to a different ticket.
+- **Clipboard history.** Student messages and replies are kept locally, capped by count and age. Recording what you copy yourself is **off by default**, and copies marked as passwords by password managers are never recorded. There's a clear-history button.
+- **AI fluff removal.** Phrases like "Certainly!", "It appears that…", "I hope this helps!" and "In order to" are stripped or simplified before pasting. It can be turned off under Writing Style.
+- **Feedback learning.** When the reply you send differs a lot from the draft, PastePilot learns concrete rules, like "make replies ~30% shorter" or "avoid 'feel free to'". These are added to your style prompt, and heavily rewritten replies can become reply examples. You can see and reset what it learned under Writing Style.
+- **Voice commands.** These are opt-in under Shortcuts. Hold **⌥V**, say "reply to this", "debug this repo", "shorter", "friendlier", "more professional", "explain more", "regenerate", "new conversation", "add to case" or "save example", then release. Audio is recorded only while the key is held and transcribed with your OpenAI key. The transcript is only matched against this fixed command list.
+- **Analytics.** Replies, debug cases, estimated time saved, the share of replies edited before sending, replies by mode, common issue types, project types and rewrites, plus a daily activity chart. Only counts are stored, never message text.
+
 ## Prompt pipeline
 
 ```
@@ -117,6 +145,15 @@ src-tauri/src/
   modes.rs       classifier + default mode instructions
   retrieval.rs   FTS5 search for knowledge + examples, style profile
   debug.rs       GitHub Debug Mode: file planning, analysis, diagnosis, reply, paste
+  checks.rs      deterministic static checks (imports, casing, exports, deps, JSX, HTML, CSS)
+  project.rs     project type detection
+  casebook.rs    issue history + fix library
+  case.rs        multi-message cases
+  cliphistory.rs clipboard history (privacy-filtered)
+  analytics.rs   local usage metrics
+  feedback.rs    learns style rules from your edits
+  fluff.rs       removes generic AI phrasing
+  voice.rs       hold-to-talk voice commands
   github.rs      read-only GitHub client (tree API + raw files), URL parsing, cache
   repo_search.rs file filtering, filename/path search, topic files, import resolution
   rewrite.rs     rewrite actions, find-and-replace the pasted reply
@@ -162,6 +199,14 @@ reply_examples(id, student_message, reply, category, created_at, updated_at)
   + reply_examples_fts  (FTS5, porter stemming, kept in sync by triggers)
 knowledge_base(id, title, content, category, tags, enabled, created_at, updated_at)
   + knowledge_fts       (FTS5, porter stemming, kept in sync by triggers)
+
+-- migration 2
+debug_issues     (id, repo, scope_key, conversation_id, issue, project_type, status, confidence,
+                  summary, findings JSON, reply, created_at)  + debug_issues_fts
+fixes            (id, title, problem, solution, snippet, tags, project_type, uses, created_at, updated_at) + fixes_fts
+clipboard_history(id, kind 'student'|'reply'|'copied', content, source, created_at)
+events           (id, kind, mode, detail, value, created_at)      -- analytics, counts only
+feedback         (id, mode, student_message, generated, final, similarity, created_at)
 ```
 
 Settings has separate delete buttons for all conversation history, all reply examples, and the whole knowledge base.
@@ -270,4 +315,7 @@ They cover memory scoping and isolation, the history size limit, de-duplication,
 - **Firefox** exposes less through Accessibility than Chrome or Safari, so remembering the reply box and in-place rewrites work best in Chromium browsers and Safari.
 - **GitHub Debug only reads public repositories** and does static analysis, so it can't see runtime errors, environment variables or anything that isn't pushed. Large repositories may only be partly listed by GitHub.
 - **Without sign-in, GitHub allows 60 file-list requests per hour.** That's about 60 analyses of different repos, and re-analyzing a repo within 3 minutes uses the cache.
+- **Voice commands need the microphone permission.** macOS asks on first use, and the audio goes to OpenAI for transcription.
+- **Screenshots go to OpenAI.** They're included in the analysis request. Don't drop screenshots that contain unrelated private data.
+- **Feedback learning only sees sends PastePilot can detect.** That means the reply box emptying in the same ticket.
 - **Unsigned builds** need the Keychain and Accessibility re-approval described above after every rebuild. An Apple Developer ID removes this.

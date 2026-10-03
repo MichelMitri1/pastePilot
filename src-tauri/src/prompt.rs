@@ -31,16 +31,21 @@ Rules:
 - If information needed to help is missing, ask the student for the minimum needed.
 - Never use em dashes.
 - Never mention AI or that the reply was generated.
+- No filler: skip openers like 'Certainly!' or 'Great question!' and closers like 'I hope this helps!'.
 - Reply in the student's language.
 - Output only the reply text, ready to paste. No quotes, no subject line, no placeholders like [Name].";
 
-pub fn build_system_prompt(settings: &Settings, style_profile: Option<&str>) -> String {
+pub fn build_system_prompt(settings: &Settings, style_profile: Option<&str>, edit_profile: Option<&str>) -> String {
     let mut p = String::with_capacity(1536);
     p.push_str("You write replies to students as their support agent. Given a student's message, write the reply the agent would send.\n\nStyle:\n");
     p.push_str(settings.style_instructions.trim());
     if let Some(profile) = style_profile {
         p.push_str("\n\nMeasured from the agent's past replies (match these habits):\n");
         p.push_str(profile);
+    }
+    if let Some(edits) = edit_profile {
+        p.push_str("\n\nLearned from how the agent edits drafts before sending (follow these):\n");
+        p.push_str(edits);
     }
     let custom = settings.custom_instructions.trim();
     if !custom.is_empty() {
@@ -147,6 +152,16 @@ pub fn user_message(selected: &str) -> String {
     format!("Student message:\n\"\"\"\n{text}\n\"\"\"")
 }
 
+/// Cleanup applied to every reply before it's pasted.
+pub fn finish_reply(reply: &str, remove_fluff: bool) -> String {
+    let cleaned = clean_reply(reply);
+    if remove_fluff {
+        crate::fluff::remove(&cleaned)
+    } else {
+        cleaned
+    }
+}
+
 /// Final safety net for style rules the model occasionally slips on.
 pub fn clean_reply(reply: &str) -> String {
     let mut out = reply.trim().to_string();
@@ -187,9 +202,10 @@ mod tests {
     #[test]
     fn prompt_includes_custom_context_only_when_set() {
         let mut s = Settings::default();
-        assert!(!build_system_prompt(&s, None).contains("Context:"));
+        assert!(!build_system_prompt(&s, None, None).contains("Context:"));
         s.custom_instructions = "Refunds within 14 days.".into();
-        assert!(build_system_prompt(&s, None).contains("Refunds within 14 days."));
+        assert!(build_system_prompt(&s, None, None).contains("Refunds within 14 days."));
+        assert!(build_system_prompt(&s, None, Some("- Use :) less often.")).contains("Use :) less often."));
     }
 
     #[test]

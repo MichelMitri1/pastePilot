@@ -91,6 +91,98 @@ const MIGRATIONS: &[&str] = &[
         VALUES (new.id, new.title, new.content, new.category, new.tags);
     END;
     "#,
+    // 2: issue history, fix library, clipboard history, analytics, feedback learning
+    r#"
+    CREATE TABLE debug_issues (
+        id               INTEGER PRIMARY KEY,
+        repo             TEXT    NOT NULL,           -- owner/repo ('' for screenshot-only cases)
+        scope_key        TEXT,
+        conversation_id  INTEGER,
+        issue            TEXT    NOT NULL,
+        project_type     TEXT    NOT NULL DEFAULT '',
+        status           TEXT    NOT NULL,           -- found | uncertain
+        confidence       TEXT    NOT NULL,           -- high | medium | low
+        summary          TEXT    NOT NULL DEFAULT '',
+        findings         TEXT    NOT NULL DEFAULT '[]',  -- JSON
+        reply            TEXT    NOT NULL DEFAULT '',
+        created_at       INTEGER NOT NULL
+    );
+    CREATE INDEX idx_debug_issues_repo ON debug_issues(repo, created_at);
+    CREATE VIRTUAL TABLE debug_issues_fts USING fts5(
+        issue, summary, findings,
+        content='debug_issues', content_rowid='id', tokenize='porter unicode61'
+    );
+    CREATE TRIGGER debug_issues_ai AFTER INSERT ON debug_issues BEGIN
+        INSERT INTO debug_issues_fts(rowid, issue, summary, findings) VALUES (new.id, new.issue, new.summary, new.findings);
+    END;
+    CREATE TRIGGER debug_issues_ad AFTER DELETE ON debug_issues BEGIN
+        INSERT INTO debug_issues_fts(debug_issues_fts, rowid, issue, summary, findings)
+        VALUES ('delete', old.id, old.issue, old.summary, old.findings);
+    END;
+    CREATE TRIGGER debug_issues_au AFTER UPDATE ON debug_issues BEGIN
+        INSERT INTO debug_issues_fts(debug_issues_fts, rowid, issue, summary, findings)
+        VALUES ('delete', old.id, old.issue, old.summary, old.findings);
+        INSERT INTO debug_issues_fts(rowid, issue, summary, findings) VALUES (new.id, new.issue, new.summary, new.findings);
+    END;
+
+    CREATE TABLE fixes (
+        id            INTEGER PRIMARY KEY,
+        title         TEXT    NOT NULL,
+        problem       TEXT    NOT NULL,
+        solution      TEXT    NOT NULL,
+        snippet       TEXT    NOT NULL DEFAULT '',
+        tags          TEXT    NOT NULL DEFAULT '',
+        project_type  TEXT    NOT NULL DEFAULT '',
+        uses          INTEGER NOT NULL DEFAULT 0,
+        created_at    INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL
+    );
+    CREATE VIRTUAL TABLE fixes_fts USING fts5(
+        title, problem, solution, tags,
+        content='fixes', content_rowid='id', tokenize='porter unicode61'
+    );
+    CREATE TRIGGER fixes_ai AFTER INSERT ON fixes BEGIN
+        INSERT INTO fixes_fts(rowid, title, problem, solution, tags) VALUES (new.id, new.title, new.problem, new.solution, new.tags);
+    END;
+    CREATE TRIGGER fixes_ad AFTER DELETE ON fixes BEGIN
+        INSERT INTO fixes_fts(fixes_fts, rowid, title, problem, solution, tags)
+        VALUES ('delete', old.id, old.title, old.problem, old.solution, old.tags);
+    END;
+    CREATE TRIGGER fixes_au AFTER UPDATE ON fixes BEGIN
+        INSERT INTO fixes_fts(fixes_fts, rowid, title, problem, solution, tags)
+        VALUES ('delete', old.id, old.title, old.problem, old.solution, old.tags);
+        INSERT INTO fixes_fts(rowid, title, problem, solution, tags) VALUES (new.id, new.title, new.problem, new.solution, new.tags);
+    END;
+
+    CREATE TABLE clipboard_history (
+        id          INTEGER PRIMARY KEY,
+        kind        TEXT    NOT NULL CHECK (kind IN ('student', 'reply', 'copied')),
+        content     TEXT    NOT NULL,
+        source      TEXT    NOT NULL DEFAULT '',
+        created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX idx_clipboard_created ON clipboard_history(created_at);
+
+    CREATE TABLE events (
+        id          INTEGER PRIMARY KEY,
+        kind        TEXT    NOT NULL,   -- reply | rewrite | debug | sent | example
+        mode        TEXT,
+        detail      TEXT,
+        value       REAL,
+        created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX idx_events_kind ON events(kind, created_at);
+
+    CREATE TABLE feedback (
+        id               INTEGER PRIMARY KEY,
+        mode             TEXT,
+        student_message  TEXT    NOT NULL,
+        generated        TEXT    NOT NULL,
+        final            TEXT    NOT NULL,
+        similarity       REAL    NOT NULL,
+        created_at       INTEGER NOT NULL
+    );
+    "#,
 ];
 
 pub fn now() -> i64 {

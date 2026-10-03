@@ -13,6 +13,7 @@
 //!   - Markdown: each `#`/`##` heading starts an entry; optional `Category:` and
 //!     `Tags:` lines right under the heading; the rest is the content.
 
+use crate::casebook::Fix;
 use crate::db::{KbEntry, ReplyExample};
 use serde_json::Value;
 
@@ -93,6 +94,55 @@ pub fn parse_kb(input: &str) -> Result<Vec<KbEntry>, String> {
     let valid: Vec<KbEntry> = out.into_iter().filter(|e| !e.title.is_empty() && !e.content.is_empty()).collect();
     if valid.is_empty() {
         return Err("No entries found. Use a JSON array or Markdown headings.".into());
+    }
+    Ok(valid)
+}
+
+/// Fixes: JSON array, or blocks separated by `---` with Title:/Problem:/Solution:/Snippet:/Tags:/Project: labels.
+pub fn parse_fixes(input: &str) -> Result<Vec<Fix>, String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("Nothing to import.".into());
+    }
+    let out: Vec<Fix> = if trimmed.starts_with('[') {
+        let items: Vec<Value> = serde_json::from_str(trimmed).map_err(|e| format!("Invalid JSON: {e}"))?;
+        items
+            .iter()
+            .map(|v| Fix {
+                id: None,
+                title: pick(v, &["title", "name"]),
+                problem: pick(v, &["problem", "symptom", "issue"]),
+                solution: pick(v, &["solution", "fix", "answer"]),
+                snippet: pick(v, &["snippet", "code"]),
+                tags: pick(v, &["tags"]),
+                project_type: pick(v, &["projectType", "project_type", "project"]),
+                uses: 0,
+            })
+            .collect()
+    } else {
+        blocks(trimmed)
+            .into_iter()
+            .map(|block| {
+                let fields = labeled_fields(&block, &["title", "problem", "solution", "fix", "snippet", "code", "tags", "project"]);
+                let get = |names: &[&str]| {
+                    names.iter().find_map(|n| fields.iter().find(|(k, _)| k == n).map(|(_, v)| v.clone())).unwrap_or_default()
+                };
+                Fix {
+                    id: None,
+                    title: get(&["title"]),
+                    problem: get(&["problem"]),
+                    solution: get(&["solution", "fix"]),
+                    snippet: get(&["snippet", "code"]),
+                    tags: get(&["tags"]),
+                    project_type: get(&["project"]),
+                    uses: 0,
+                }
+            })
+            .collect()
+    };
+    let valid: Vec<Fix> = out.into_iter().filter(|f| !f.title.is_empty() && !f.solution.is_empty()).collect();
+    if valid.is_empty() {
+        return Err("No fixes found. Each needs a title and a solution.".into());
     }
     Ok(valid)
 }
@@ -211,6 +261,15 @@ mod tests {
         let ex = parse_examples(r#"[{"question":"Hi","answer":"Hey!"},{"student":"x"}]"#).unwrap();
         assert_eq!(ex.len(), 1);
         assert_eq!(ex[0].reply, "Hey!");
+    }
+
+    #[test]
+    fn imports_fixes() {
+        let f = parse_fixes("Title: Casing\nProblem: works locally, fails on Netlify\nSolution: match file name casing\nTags: imports\n---\nTitle: x").unwrap();
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].solution, "match file name casing");
+        let f = parse_fixes(r#"[{"title":"A","fix":"B","code":"c"}]"#).unwrap();
+        assert_eq!((f[0].solution.as_str(), f[0].snippet.as_str()), ("B", "c"));
     }
 
     #[test]

@@ -9,15 +9,23 @@ import Examples from "./sections/Examples";
 import Knowledge from "./sections/Knowledge";
 import Memory from "./sections/Memory";
 import Shortcuts from "./sections/Shortcuts";
+import Fixes from "./sections/Fixes";
+import Issues from "./sections/Issues";
+import Clipboard from "./sections/Clipboard";
+import Analytics from "./sections/Analytics";
 import type { SectionProps } from "./sections/types";
 
-const SECTIONS: { id: string; label: string; component: (p: SectionProps) => React.ReactElement }[] = [
+const SECTIONS: { id: string; label: string; component: (p: SectionProps) => React.ReactElement | null }[] = [
   { id: "general", label: "General", component: General },
   { id: "ai", label: "AI", component: AI },
   { id: "style", label: "Writing Style", component: Style },
   { id: "examples", label: "Reply Examples", component: Examples },
   { id: "knowledge", label: "Knowledge Base", component: Knowledge },
   { id: "memory", label: "Conversation Memory", component: Memory },
+  { id: "fixes", label: "Fix Library", component: Fixes },
+  { id: "issues", label: "Issue History", component: Issues },
+  { id: "clipboard", label: "Clipboard History", component: Clipboard },
+  { id: "analytics", label: "Analytics", component: Analytics },
   { id: "shortcuts", label: "Shortcuts", component: Shortcuts },
 ];
 
@@ -44,10 +52,15 @@ export default function App() {
     });
     // "Check for Updates…" in the menu bar: show the General page, where the Updates panel lives.
     const unlistenUpdates = listen("check-updates", () => setSection("general"));
+    // Menu bar items like "Clipboard History…" open a specific page.
+    const goTo = (id: string | null) => id && SECTIONS.some((s) => s.id === id) && setSection(id);
+    api.takePendingSection().then(goTo);
+    const unlistenSection = listen<string>("open-section", (e) => goTo(e.payload));
     return () => {
       window.removeEventListener("focus", refreshStatus);
       unlisten.then((f) => f());
       unlistenUpdates.then((f) => f());
+      unlistenSection.then((f) => f());
     };
   }, [refreshStatus]);
 

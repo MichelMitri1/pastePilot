@@ -10,6 +10,7 @@
 //! a long time, watching stops without saving anything.
 
 use crate::db;
+use crate::{analytics, feedback};
 use crate::macos::{action_bar, ax};
 use crate::memory;
 use crate::state::AppState;
@@ -89,12 +90,48 @@ fn same_scope(target: &Target) -> bool {
 
 fn save(app: &AppHandle, agent_message_id: i64, text: &str) {
     let state = app.state::<AppState>();
-    let _ = db::update_message(&state.db(), agent_message_id, text);
-    // The draft is gone from the box, so rewriting it no longer makes sense.
-    if state.last_reply().is_some_and(|l| l.agent_message_id == Some(agent_message_id)) {
-        state.set_last_reply(None);
-        action_bar::hide(app);
+    let settings = state.settings();
+    let last = state.last_reply().filter(|l| l.agent_message_id == Some(agent_message_id));
+    {
+        let db = state.db();
+        let _ = db::update_message(&db, agent_message_id, text);
     }
+    let Some(last) = last else { return };
+
+    // Feedback learning: how much did you change the draft before sending?
+    let similarity = feedback::similarity(&last.reply, text);
+    let mode = last.mode.label();
+    let mut examples_changed = false;
+    {
+        let db = state.db();
+        analytics::log(&db, "sent", Some(mode), None, Some(similarity));
+        if settings.feedback_learning && similarity < feedback::SIGNIFICANT {
+            feedback::record(&db, Some(last.mode.id()), &last.student_text, &last.reply, text, similarity);
+            // A heavily rewritten reply is a great example of your style.
+            if settings.feedback_save_examples && similarity < 0.75 && text.chars().count() < 4000 {
+                let example = db::ReplyExample {
+                    id: None,
+                    student_message: last.student_text.trim().to_string(),
+                    reply: text.trim().to_string(),
+                    category: last.mode.id().to_string(),
+                };
+                if db::save_example(&db, &example).is_ok() {
+                    analytics::log(&db, "example", Some(mode), Some("learned"), None);
+                    examples_changed = true;
+                }
+            }
+        }
+    } // database lock released before the profiles are rebuilt
+    if settings.feedback_learning && similarity < feedback::SIGNIFICANT {
+        state.refresh_edit_profile();
+        if examples_changed {
+            state.refresh_style_profile();
+        }
+    }
+
+    // The draft is gone from the box, so rewriting it no longer makes sense.
+    state.set_last_reply(None);
+    action_bar::hide(app);
 }
 
 #[derive(Debug, PartialEq)]

@@ -20,6 +20,8 @@ pub fn capture(pid: i32) -> Option<String> {
 }
 
 fn capture_via_copy() -> Option<String> {
+    // Borrowing the clipboard must not show up in clipboard history as a "copy".
+    crate::cliphistory::suppress_for(Duration::from_millis(1500));
     let before = pasteboard::change_count();
     let saved = pasteboard::snapshot();
     if !keys::copy() {

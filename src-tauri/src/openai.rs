@@ -79,6 +79,42 @@ impl OpenAi {
         serde_json::from_str(content).map_err(|_| "OpenAI returned an unreadable analysis. Try again.".to_string())
     }
 
+    /// Speech to text for voice commands (16 kHz mono WAV). Tries the fast model, then whisper-1.
+    pub async fn transcribe(&self, api_key: &str, wav: Vec<u8>) -> Result<String, String> {
+        const HINT: &str = "Voice commands: reply to this, debug this repo, shorter, friendlier, more professional, explain more, regenerate, new conversation, add to case, clear case, save example.";
+        for model in ["gpt-4o-mini-transcribe", "whisper-1"] {
+            let part = reqwest::multipart::Part::bytes(wav.clone())
+                .file_name("voice.wav")
+                .mime_str("audio/wav")
+                .map_err(|e| e.to_string())?;
+            let form = reqwest::multipart::Form::new()
+                .text("model", model)
+                .text("prompt", HINT)
+                .text("response_format", "json")
+                .part("file", part);
+            let resp = self
+                .client
+                .post(format!("{API_BASE}/audio/transcriptions"))
+                .bearer_auth(api_key)
+                .multipart(form)
+                .send()
+                .await
+                .map_err(|e| network_error(&e))?;
+            let status = resp.status().as_u16();
+            let text = resp.text().await.unwrap_or_default();
+            if status == 200 {
+                let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                return Ok(v["text"].as_str().unwrap_or_default().to_string());
+            }
+            if status == 400 || status == 404 {
+                continue; // model not available on this account: try the next one
+            }
+            let message = serde_json::from_str::<Value>(&text).ok().and_then(|v| v["error"]["message"].as_str().map(str::to_owned)).unwrap_or_default();
+            return Err(http_error(status, &message));
+        }
+        Err("Voice transcription isn't available for this OpenAI account.".into())
+    }
+
     /// POSTs to Chat Completions, adding the lowest reasoning effort the model allows
     /// (and dropping it for models that reject it).
     async fn send(&self, api_key: &str, model: &str, mut body: Value) -> Result<reqwest::Response, String> {

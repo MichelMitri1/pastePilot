@@ -11,7 +11,7 @@ use crate::settings::Settings;
 use crate::state::AppState;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 static REWRITE_KEYS_ON: AtomicBool = AtomicBool::new(false);
 
@@ -30,7 +30,7 @@ fn register(app: &AppHandle, accelerator: &str) -> Result<(), String> {
 pub fn register_all(app: &AppHandle, settings: &Settings) -> Result<(), String> {
     register(app, &settings.shortcut)?;
     let mut used = vec![settings.shortcut.clone()];
-    for extra in [settings.new_conversation_shortcut.trim(), settings.debug_shortcut.trim()] {
+    for extra in optional_shortcuts(settings) {
         if !extra.is_empty() && !used.iter().any(|u| u == extra) {
             register(app, extra)?;
             used.push(extra.to_string());
@@ -39,10 +39,26 @@ pub fn register_all(app: &AppHandle, settings: &Settings) -> Result<(), String> 
     Ok(())
 }
 
+/// Hotkeys besides "generate". Voice is only registered while voice commands are on,
+/// so ⌥V keeps working normally otherwise.
+fn optional_shortcuts(s: &Settings) -> Vec<&str> {
+    let mut v = vec![s.new_conversation_shortcut.trim(), s.debug_shortcut.trim(), s.case_shortcut.trim()];
+    if s.voice_enabled {
+        v.push(s.voice_shortcut.trim());
+    }
+    v
+}
+
 /// Validates and swaps hotkeys, restoring the old ones if the new ones fail.
 pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) -> Result<(), String> {
     parse(&new.shortcut)?;
-    let all = [new.shortcut.trim(), new.new_conversation_shortcut.trim(), new.debug_shortcut.trim()];
+    let all = [
+        new.shortcut.trim(),
+        new.new_conversation_shortcut.trim(),
+        new.debug_shortcut.trim(),
+        new.case_shortcut.trim(),
+        new.voice_shortcut.trim(),
+    ];
     for (i, s) in all.iter().enumerate() {
         if s.is_empty() {
             continue;
@@ -76,10 +92,26 @@ pub fn set_rewrite_keys(app: &AppHandle, on: bool) {
     }
 }
 
-/// Called for every hotkey press.
-pub fn dispatch(app: &AppHandle, pressed: &Shortcut) {
+/// Called for every hotkey press and release.
+pub fn dispatch(app: &AppHandle, pressed: &Shortcut, key_state: ShortcutState) {
     let settings = app.state::<AppState>().settings();
-    let matches = |accel: &str| parse(accel).is_ok_and(|s| s.id() == pressed.id());
+    let matches = |accel: &str| !accel.trim().is_empty() && parse(accel.trim()).is_ok_and(|s| s.id() == pressed.id());
+
+    // Voice is hold-to-talk: it's the only hotkey that cares about release.
+    if settings.voice_enabled && matches(&settings.voice_shortcut) {
+        match key_state {
+            ShortcutState::Pressed => crate::voice::on_press(app),
+            ShortcutState::Released => crate::voice::on_release(app),
+        }
+        return;
+    }
+    if key_state != ShortcutState::Pressed {
+        return;
+    }
+    if matches(&settings.case_shortcut) {
+        crate::case::add_selection(app.clone(), false);
+        return;
+    }
 
     if matches(&settings.shortcut) {
         flow::trigger(app.clone(), Trigger::Hotkey);

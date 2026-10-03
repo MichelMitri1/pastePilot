@@ -107,6 +107,41 @@ pub fn resolve_user_file(query: &str, files: &[&TreeEntry]) -> Option<String> {
     best.map(|(_, _, p)| p.to_string())
 }
 
+/// File paths mentioned in an error message or the issue text
+/// ("Can't resolve './components/Header'", "src/App.jsx:12:5", "in styles.css"), resolved to repo paths.
+pub fn paths_in_text(text: &str, files: &[&TreeEntry]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for raw in text.split(|c: char| c.is_whitespace() || "'\"`()[]{}<>,;".contains(c)) {
+        // Strip ":12:5" positions and trailing punctuation.
+        let token = raw.trim_end_matches(['.', ':', '!', '?']);
+        let token = match token.find(|c: char| c == ':') {
+            Some(i) if token[i + 1..].chars().next().is_some_and(|c| c.is_ascii_digit()) => &token[..i],
+            _ => token,
+        };
+        let looks_like_path = token.contains('/') || TEXT_EXTS.iter().any(|e| token.to_lowercase().ends_with(&format!(".{e}")));
+        if !looks_like_path || token.len() < 4 || token.contains("://") || token.starts_with("node_modules") || token.contains("/node_modules/") {
+            continue;
+        }
+        // Absolute paths from a student's machine: keep the part from src/ (or the last 2 segments).
+        let mut candidate = token.trim_start_matches("./").trim_start_matches("../").to_string();
+        if let Some(i) = candidate.find("/src/") {
+            candidate = candidate[i + 1..].to_string();
+        } else if candidate.starts_with('/') {
+            let segs: Vec<&str> = candidate.split('/').filter(|s| !s.is_empty()).collect();
+            candidate = segs[segs.len().saturating_sub(2)..].join("/");
+        }
+        if let Some(p) = resolve_user_file(&candidate, files) {
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        }
+        if out.len() >= 4 {
+            break;
+        }
+    }
+    out
+}
+
 /// Search terms from the issue: words, CamelCase parts, and joined word pairs
 /// ("mobile menu" → "mobilemenu" to match MobileMenu.jsx).
 pub fn keywords(text: &str) -> Vec<String> {
@@ -412,6 +447,17 @@ mod tests {
         assert_eq!(local_imports("a.css", "@import 'base.css';"), vec!["base.css"]);
         let html = "<script type=\"module\" src=\"/src/main.jsx\"></script>";
         assert_eq!(resolve_import("index.html", &local_imports("index.html", html)[0], &all).as_deref(), Some("src/main.jsx"));
+    }
+
+    #[test]
+    fn finds_paths_in_error_messages() {
+        let e = entries(&["src/components/Header.jsx", "src/App.jsx", "src/styles/main.css"]);
+        let c = candidates(&e);
+        let err = "Module not found: Error: Can't resolve './components/Header' in '/Users/sam/proj/src'\n  at src/App.jsx:12:5";
+        let found = paths_in_text(err, &c);
+        assert!(found.contains(&"src/components/Header.jsx".to_string()));
+        assert!(found.contains(&"src/App.jsx".to_string()));
+        assert!(paths_in_text("see https://example.com/a.css", &c).is_empty());
     }
 
     #[test]

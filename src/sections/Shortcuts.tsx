@@ -1,4 +1,4 @@
-import { ShortcutInput, Toggle } from "../components/common";
+import { prettyShortcut, ShortcutInput, Toggle } from "../components/common";
 import type { SectionProps } from "./types";
 
 const REWRITES = [
@@ -25,6 +25,19 @@ export default function Shortcuts({ settings, update }: SectionProps) {
           </div>
         </div>
         <div className="field">
+          <label>Add selection to case</label>
+          <div className="row">
+            <ShortcutInput value={settings.caseShortcut} onChange={(v) => update("caseShortcut", v)} />
+            <button className="link" onClick={() => update("caseShortcut", "")}>None</button>
+          </div>
+        </div>
+        <div className="field">
+          <label>Voice command (hold to talk)</label>
+          <div className="row">
+            <ShortcutInput value={settings.voiceShortcut} onChange={(v) => update("voiceShortcut", v)} />
+          </div>
+        </div>
+        <div className="field">
           <label>GitHub Debug</label>
           <div className="row">
             <ShortcutInput value={settings.debugShortcut} onChange={(v) => update("debugShortcut", v)} />
@@ -33,6 +46,26 @@ export default function Shortcuts({ settings, update }: SectionProps) {
         </div>
       </section>
       <p className="muted small">Click a field and press the new key combination. Changes apply when you click Save.</p>
+
+      <section className="card">
+        <label>Multi-message cases</label>
+        <span className="muted small">
+          Select a student message and press {prettyShortcut(settings.caseShortcut)} to add it to the case; repeat for each
+          message. The next ⌥R or ⌥G answers them as one case. Cases never carry over to a different ticket.
+        </span>
+      </section>
+
+      <section className="card">
+        <Toggle checked={settings.voiceEnabled} onChange={(v) => update("voiceEnabled", v)}>
+          Voice commands
+        </Toggle>
+        <span className="muted small">
+          Hold {prettyShortcut(settings.voiceShortcut)}, say a command, release. Try “reply to this”, “debug this repo”,
+          “shorter”, “friendlier”, “more professional”, “explain more”, “regenerate”, “new conversation”, “add to case”,
+          “save example”. Audio is recorded only while you hold the key and is sent to OpenAI for transcription. macOS asks
+          for microphone access the first time.
+        </span>
+      </section>
 
       <section className="toggles">
         <Toggle checked={settings.rewriteShortcuts} onChange={(v) => update("rewriteShortcuts", v)}>

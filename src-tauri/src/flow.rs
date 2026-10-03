@@ -14,7 +14,7 @@ use crate::rewrite::{self, RewriteAction, RewriteDelivery};
 use crate::settings::Settings;
 use crate::state::{AppState, LastReply};
 use crate::sent_watch::{self, Target};
-use crate::{prompt, retrieval, selection, tray, windows};
+use crate::{analytics, case, cliphistory, prompt, retrieval, selection, tray, windows};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -110,18 +110,29 @@ async fn generate(app: &AppHandle, how: Trigger) {
 
     // 1. Read the selection (AX first, Cmd+C fallback) and where it came from.
     let (memory_on, auto_detect) = (settings.memory_enabled, settings.memory_auto_detect);
-    let captured = tauri::async_runtime::spawn_blocking(move || {
-        let text = selection::capture(target_pid)?;
+    let (captured, scope) = tauri::async_runtime::spawn_blocking(move || {
+        let text = selection::capture(target_pid);
         let scope = memory_on.then(|| memory::detect_scope(target_pid, auto_detect));
-        Some((text, scope))
+        (text, scope)
     })
     .await
-    .ok()
-    .flatten();
-    let Some((selected, scope)) = captured else {
-        hud::show(app, "No text selected.", Some(SHORT));
-        return;
+    .unwrap_or((None, None));
+    if let Some(text) = &captured {
+        let source = apps::bundle_id(target_pid).unwrap_or_default();
+        cliphistory::record(app, "student", text, &source);
+    }
+    // A multi-message case collected with ⌥A is answered as one message.
+    let selected = match case::take_combined(scope.as_ref().map(|s| s.key.as_str()), captured.as_deref()) {
+        Some(combined) => combined,
+        None => match captured {
+            Some(text) => text,
+            None => {
+                hud::show(app, "No text selected.", Some(SHORT));
+                return;
+            }
+        },
     };
+    let repo_hint = crate::github::find_repo_url(&selected).is_some();
 
     let Some(api_key) = state.api_key() else {
         hud::show(app, "Add your OpenAI API key in Settings.", Some(LONG));
@@ -145,7 +156,7 @@ async fn generate(app: &AppHandle, how: Trigger) {
     let system = state.system_prompt();
     let messages = prompt::messages(&system, &prepared.context, &prepared.history, &prepared.user, &[]);
     let reply = match state.openai.generate(&api_key, &settings.model, &messages).await {
-        Ok(text) if !text.trim().is_empty() => prompt::clean_reply(&text),
+        Ok(text) if !text.trim().is_empty() => prompt::finish_reply(&text, settings.remove_fluff),
         Ok(_) => {
             hud::show(app, "OpenAI returned an empty reply.", Some(LONG));
             return;
@@ -155,6 +166,8 @@ async fn generate(app: &AppHandle, how: Trigger) {
             return;
         }
     };
+    cliphistory::record(app, "reply", &reply, "");
+    analytics::log(&state.db(), "reply", Some(prepared.mode.label()), None, None);
 
     let agent_message_id =
         prepared.conversation_id.and_then(|c| memory::record_agent(&state.db(), c, &reply).ok());
@@ -181,6 +194,8 @@ async fn generate(app: &AppHandle, how: Trigger) {
 
     let mode = prepared.mode.label();
     match delivery {
+        // Students often paste their repo link: offer GitHub Debug right away.
+        Delivery::Pasted if repo_hint => hud::show(app, &format!("Reply pasted · {mode} · Repo link found: ⌥G to debug it"), Some(LONG)),
         Delivery::Pasted if settings.show_hud => hud::show(app, &format!("Reply pasted · {mode}"), Some(SHORT)),
         Delivery::Pasted => hud::hide(app),
         Delivery::CopiedNoInput => hud::show(app, "Reply copied to clipboard.", Some(MEDIUM)),
@@ -334,7 +349,7 @@ async fn followup(app: &AppHandle, action: Followup) {
         hud::show(app, &format!("Rewriting · {label}"), None);
     }
     let new_reply = match state.openai.generate(&api_key, &settings.model, &messages).await {
-        Ok(text) if !text.trim().is_empty() => prompt::clean_reply(&text),
+        Ok(text) if !text.trim().is_empty() => prompt::finish_reply(&text, settings.remove_fluff),
         Ok(_) => {
             hud::show(app, "OpenAI returned an empty reply.", Some(LONG));
             return;
@@ -354,6 +369,8 @@ async fn followup(app: &AppHandle, action: Followup) {
             let _ = db::set_message_mode(&db, id, m.id());
         }
     }
+    cliphistory::record(app, "reply", &new_reply, "");
+    analytics::log(&state.db(), "rewrite", Some(mode.label()), Some(label.as_str()), None);
     let old_reply = std::mem::replace(&mut last.reply, new_reply.clone());
     last.mode = mode;
     last.context = context;
@@ -408,6 +425,9 @@ pub fn save_last_as_example(app: &AppHandle) {
             category: last.mode.id().to_string(),
         };
         let saved = db::save_example(&state.db(), &example).is_ok();
+        if saved {
+            analytics::log(&state.db(), "example", Some(last.mode.label()), Some("manual"), None);
+        }
         if saved {
             state.refresh_style_profile();
             hud::show(&app, "Saved as reply example", Some(SHORT));

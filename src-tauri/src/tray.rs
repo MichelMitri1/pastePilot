@@ -18,6 +18,10 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
 
     let generate = MenuItem::with_id(app, "generate", "Generate Reply", true, None::<&str>)?;
     let github_debug = MenuItem::with_id(app, "github_debug", "GitHub Debug…", true, None::<&str>)?;
+    let add_case = MenuItem::with_id(app, "case_add", "Add Selection to Case", true, None::<&str>)?;
+    let clear_case = MenuItem::with_id(app, "case_clear", "Clear Case", true, None::<&str>)?;
+    let history = MenuItem::with_id(app, "clipboard_history", "Clipboard History…", true, None::<&str>)?;
+    let dashboard = MenuItem::with_id(app, "analytics", "Analytics…", true, None::<&str>)?;
 
     let rewrite_items: Vec<MenuItem<Wry>> = RewriteAction::ALL
         .iter()
@@ -66,9 +70,13 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &sep()?,
             &new_conversation,
             &clear_conversation,
+            &add_case,
+            &clear_case,
             &memory,
             &auto_paste,
             &sep()?,
+            &history,
+            &dashboard,
             &open_settings,
             &check_updates,
             &quit,
@@ -92,6 +100,10 @@ fn on_menu(app: &AppHandle, id: &str) {
     match id {
         "generate" => flow::trigger(app.clone(), Trigger::Menu),
         "github_debug" => crate::debug::open(app.clone(), true),
+        "case_add" => crate::case::add_selection(app.clone(), true),
+        "case_clear" => crate::case::clear(app),
+        "clipboard_history" => open_section(app, "clipboard"),
+        "analytics" => open_section(app, "analytics"),
         "settings" => windows::open_settings(app),
         "check_updates" => {
             // The General page checks for updates as soon as it opens.
@@ -122,6 +134,11 @@ fn toggle(app: &AppHandle, change: impl FnOnce(&mut Settings)) {
         sync(app, &settings);
         emit_settings(app, &settings);
     }
+}
+
+/// Opens Settings on a specific page.
+fn open_section(app: &AppHandle, section: &'static str) {
+    windows::open_settings_at(app, section);
 }
 
 /// Keeps the menu's check marks in line with settings.

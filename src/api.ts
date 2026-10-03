@@ -36,6 +36,19 @@ export interface Settings {
   newConversationShortcut: string;
   debugShortcut: string;
   debugModel: string;
+  debugCompareCommits: boolean;
+  removeFluff: boolean;
+  feedbackLearning: boolean;
+  feedbackSaveExamples: boolean;
+  caseShortcut: string;
+  clipboardHistory: boolean;
+  clipboardWatch: boolean;
+  clipboardMaxItems: number;
+  clipboardMaxDays: number;
+  voiceEnabled: boolean;
+  voiceShortcut: string;
+  minutesPerReply: number;
+  minutesPerDebug: number;
 }
 
 export interface Status {
@@ -110,6 +123,8 @@ export interface DebugContext {
   hasTarget: boolean;
   conversation: string | null;
   historyCount: number;
+  caseMessages: number;
+  compareCommitsDefault: boolean;
 }
 
 export interface Snippet {
@@ -127,6 +142,25 @@ export interface Finding {
   cause: string;
   fix: string;
   snippet: Snippet | null;
+  before: string | null;
+  after: string | null;
+  language: string;
+}
+
+export interface Check {
+  file: string;
+  line: number | null;
+  kind: string;
+  message: string;
+}
+
+export interface CommitInfo {
+  sha: string;
+  short: string;
+  message: string;
+  date: string;
+  url: string;
+  files: { path: string; status: string; additions: number; deletions: number }[];
 }
 
 export interface Analysis {
@@ -139,12 +173,24 @@ export interface Analysis {
   examined: { path: string; url: string; lines: number; truncated: boolean }[];
   notes: string[];
   mode: string;
+  project: { label: string; tags: string[] } | null;
+  checks: Check[];
+  commits: CommitInfo[];
+  similar: { id: number; repo: string; issue: string; summary: string; confidence: string; createdAt: number; sameRepo: boolean }[];
+  fixes: { id: number; title: string; used: boolean }[];
+  screenshots: number;
+  issueType: string;
 }
 
 export const debugGetContext = () => invoke<DebugContext>("debug_get_context");
-export const debugAnalyze = (request: { repoUrl: string; issue: string; files: string[] }) =>
-  invoke<Analysis>("debug_analyze", { request });
-export const debugGenerateReply = () => invoke<string>("debug_generate_reply");
+export const debugAnalyze = (request: {
+  repoUrl: string;
+  issue: string;
+  files: string[];
+  screenshots: string[];
+  compareCommits: boolean;
+}) => invoke<Analysis>("debug_analyze", { request });
+export const debugGenerateReply = (includeSnippet: boolean) => invoke<string>("debug_generate_reply", { includeSnippet });
 export const debugPaste = (reply: string) => invoke<void>("debug_paste", { reply });
 export const debugCopy = (reply: string) => invoke<void>("debug_copy", { reply });
 export const openGithubUrl = (url: string) => invoke<void>("open_github_url", { url });
@@ -160,3 +206,92 @@ export interface UpdateInfo {
 
 export const checkForUpdate = () => invoke<UpdateInfo>("check_for_update");
 export const installUpdate = () => invoke<void>("install_update");
+
+// ----- Fix library, issue history -----
+
+export interface Fix {
+  id?: number | null;
+  title: string;
+  problem: string;
+  solution: string;
+  snippet: string;
+  tags: string;
+  projectType: string;
+  uses?: number;
+}
+
+export interface IssueRecord {
+  id: number;
+  repo: string;
+  issue: string;
+  projectType: string;
+  status: string;
+  confidence: string;
+  summary: string;
+  findings: string;
+  reply: string;
+  createdAt: number;
+}
+
+export const listFixes = () => invoke<Fix[]>("list_fixes");
+export const saveFix = (fix: Fix) => invoke<number>("save_fix", { fix });
+export const deleteFix = (id: number) => invoke<void>("delete_fix", { id });
+export const clearFixes = () => invoke<void>("clear_fixes");
+export const importFixes = (text: string) => invoke<number>("import_fixes", { text });
+export const listIssues = () => invoke<IssueRecord[]>("list_issues");
+export const deleteIssue = (id: number) => invoke<void>("delete_issue", { id });
+export const clearIssues = () => invoke<void>("clear_issues");
+
+// ----- Clipboard history, cases -----
+
+export interface ClipItem {
+  id: number;
+  kind: "student" | "reply" | "copied";
+  content: string;
+  source: string;
+  createdAt: number;
+}
+
+export const listClipboard = () => invoke<ClipItem[]>("list_clipboard");
+export const deleteClipboardItem = (id: number) => invoke<void>("delete_clipboard_item", { id });
+export const clearClipboard = () => invoke<void>("clear_clipboard");
+export const copyClipboardItem = (id: number) => invoke<void>("copy_clipboard_item", { id });
+export const caseAddItems = (ids: number[]) => invoke<number>("case_add_items", { ids });
+export const caseStatus = () => invoke<number>("case_status");
+export const caseClear = () => invoke<void>("case_clear");
+
+// ----- Analytics, learning -----
+
+export interface Count {
+  label: string;
+  count: number;
+}
+
+export interface Dashboard {
+  replies: number;
+  debugCases: number;
+  rewrites: number;
+  sent: number;
+  edited: number;
+  examplesLearned: number;
+  minutesSaved: number;
+  modes: Count[];
+  issueTypes: Count[];
+  projectTypes: Count[];
+  rewriteActions: Count[];
+  days: { daysAgo: number; replies: number; debug: number }[];
+}
+
+export const getDashboard = (rangeDays: number) => invoke<Dashboard>("get_dashboard", { rangeDays });
+export const resetAnalytics = () => invoke<void>("reset_analytics");
+export const getLearning = () => invoke<{ samples: number; profile: string | null }>("get_learning");
+export const resetLearning = () => invoke<void>("reset_learning");
+export const takePendingSection = () => invoke<string | null>("take_pending_section");
+
+export const timeAgo = (unixSeconds: number) => {
+  const s = Math.max(0, Date.now() / 1000 - unixSeconds);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};

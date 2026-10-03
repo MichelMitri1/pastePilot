@@ -21,14 +21,30 @@
 //! - shortcut.rs   global hotkey
 //! - tray.rs       menu bar icon and menu
 //! - updater.rs    in-app updates from GitHub Releases
+//! - checks.rs     deterministic static checks for GitHub Debug
+//! - project.rs    project type detection (React, Next.js, Vue, vanilla…)
+//! - casebook.rs   issue history + saved fix library
+//! - case.rs       multi-message cases (⌥A)
+//! - cliphistory.rs  local clipboard history with privacy controls
+//! - analytics.rs  local usage metrics for the dashboard
+//! - feedback.rs   learns style rules from your edits
+//! - fluff.rs      removes generic AI phrasing
+//! - voice.rs      hold-to-talk voice commands
 //! - windows.rs    Settings and GitHub Debug windows
 //! - commands.rs   commands called by the React Settings UI
 //! - macos/        Accessibility, key events, clipboard, app focus, HUD, rewrite bar
 
+mod analytics;
+mod case;
+mod casebook;
+mod checks;
+mod cliphistory;
 mod commands;
 mod db;
 mod debug;
+mod feedback;
 mod flow;
+mod fluff;
 mod github;
 mod import;
 mod keychain;
@@ -36,6 +52,7 @@ mod macos;
 mod memory;
 mod modes;
 mod openai;
+mod project;
 mod prompt;
 mod repo_search;
 mod retrieval;
@@ -47,6 +64,7 @@ mod shortcut;
 mod state;
 mod tray;
 mod updater;
+mod voice;
 mod windows;
 
 use macos::{ax, focus_tracker, hud};
@@ -54,17 +72,12 @@ use state::AppState;
 use std::time::Duration;
 use tauri::{Manager, RunEvent};
 use tauri_plugin_autostart::MacosLauncher;
-use tauri_plugin_global_shortcut::ShortcutState;
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        shortcut::dispatch(app, shortcut);
-                    }
-                })
+                .with_handler(|app, shortcut, event| shortcut::dispatch(app, shortcut, event.state()))
                 .build(),
         )
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
@@ -98,6 +111,26 @@ pub fn run() {
             debug::debug_paste,
             debug::debug_copy,
             debug::open_github_url,
+            commands::list_fixes,
+            commands::save_fix,
+            commands::delete_fix,
+            commands::clear_fixes,
+            commands::import_fixes,
+            commands::list_issues,
+            commands::delete_issue,
+            commands::clear_issues,
+            commands::list_clipboard,
+            commands::delete_clipboard_item,
+            commands::clear_clipboard,
+            commands::copy_clipboard_item,
+            commands::case_add_items,
+            commands::case_status,
+            commands::case_clear,
+            commands::get_dashboard,
+            commands::reset_analytics,
+            commands::get_learning,
+            commands::reset_learning,
+            windows::take_pending_section,
             updater::check_for_update,
             updater::install_update,
         ])
@@ -130,6 +163,7 @@ pub fn run() {
             }
 
             updater::start_background_checks(&handle);
+            cliphistory::start_watcher(&handle);
 
             let warm = handle.clone();
             tauri::async_runtime::spawn(async move {

@@ -42,6 +42,8 @@ pub struct AppState {
     settings_path: PathBuf,
     settings: RwLock<Settings>,
     style_profile: RwLock<Option<String>>,
+    /// Style rules learned from your edits (feedback learning).
+    edit_profile: RwLock<Option<String>>,
     system_prompt: RwLock<Arc<str>>,
     /// Loaded from Keychain once, then served from memory (no Keychain hit per reply).
     api_key: Mutex<Option<String>>,
@@ -68,7 +70,9 @@ impl AppState {
             Err(e) => (db::open_in_memory().expect("in-memory sqlite"), Some(format!("Database unavailable: {e}"))),
         };
         let style_profile = retrieval::style_profile(&db::all_example_replies(&db).unwrap_or_default());
-        let system_prompt: Arc<str> = prompt::build_system_prompt(&settings, style_profile.as_deref()).into();
+        let edit_profile = if settings.feedback_learning { crate::feedback::edit_profile(&db) } else { None };
+        let system_prompt: Arc<str> =
+            prompt::build_system_prompt(&settings, style_profile.as_deref(), edit_profile.as_deref()).into();
 
         // Keychain first; OPENAI_API_KEY is a development fallback only.
         let api_key = keychain::load().or_else(|| std::env::var("OPENAI_API_KEY").ok().filter(|k| !k.is_empty()));
@@ -76,6 +80,7 @@ impl AppState {
             settings_path,
             settings: RwLock::new(settings),
             style_profile: RwLock::new(style_profile),
+            edit_profile: RwLock::new(edit_profile),
             system_prompt: RwLock::new(system_prompt),
             api_key: Mutex::new(api_key),
             db: Mutex::new(db),
@@ -102,8 +107,9 @@ impl AppState {
     fn rebuild_system_prompt(&self) {
         let settings = self.settings();
         let profile = self.style_profile.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let edits = self.edit_profile.read().unwrap_or_else(|e| e.into_inner()).clone().filter(|_| settings.feedback_learning);
         *self.system_prompt.write().unwrap_or_else(|e| e.into_inner()) =
-            prompt::build_system_prompt(&settings, profile.as_deref()).into();
+            prompt::build_system_prompt(&settings, profile.as_deref(), edits.as_deref()).into();
     }
 
     pub fn replace_settings(&self, new: Settings) -> Result<(), String> {
@@ -118,6 +124,17 @@ impl AppState {
         let replies = db::all_example_replies(&self.db()).unwrap_or_default();
         *self.style_profile.write().unwrap_or_else(|e| e.into_inner()) = retrieval::style_profile(&replies);
         self.rebuild_system_prompt();
+    }
+
+    /// Call after feedback is recorded or cleared: re-derives the learned edit rules.
+    pub fn refresh_edit_profile(&self) {
+        let profile = crate::feedback::edit_profile(&self.db());
+        *self.edit_profile.write().unwrap_or_else(|e| e.into_inner()) = profile;
+        self.rebuild_system_prompt();
+    }
+
+    pub fn edit_profile(&self) -> Option<String> {
+        self.edit_profile.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn api_key(&self) -> Option<String> {

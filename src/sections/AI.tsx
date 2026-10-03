@@ -38,6 +38,10 @@ export default function AI({ settings, update, status }: SectionProps) {
           Used to read code in GitHub Debug Mode. gpt-4.1-mini is fast; gpt-4.1 is slower but catches subtler bugs.
           Replies always use the main model and your writing style.
         </span>
+        <label className="check">
+          <input type="checkbox" checked={settings.debugCompareCommits} onChange={(e) => update("debugCompareCommits", e.target.checked)} />
+          <span>Always compare recent commits <span className="muted small">(otherwise only when the student says it broke after a change; uses 4 GitHub requests)</span></span>
+        </label>
       </section>
 
       <h3>Mode instructions</h3>

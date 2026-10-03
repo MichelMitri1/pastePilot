@@ -50,6 +50,28 @@ pub struct RepoTree {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitFile {
+    pub path: String,
+    pub status: String,
+    pub additions: u64,
+    pub deletions: u64,
+    #[serde(skip)]
+    pub patch: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitInfo {
+    pub sha: String,
+    pub short: String,
+    pub message: String,
+    pub date: String,
+    pub url: String,
+    pub files: Vec<CommitFile>,
+}
+
 #[derive(Debug)]
 pub enum GhError {
     InvalidUrl,
@@ -125,6 +147,7 @@ pub fn parse_repo_url(input: &str) -> Result<RepoRef, GhError> {
 struct Cache {
     trees: HashMap<String, (Instant, RepoTree)>,
     files: HashMap<String, Arc<str>>,
+    commits: HashMap<String, (Instant, Vec<CommitInfo>)>,
 }
 
 static CACHE: LazyLock<Mutex<Cache>> = LazyLock::new(|| Mutex::new(Cache::default()));
@@ -198,6 +221,77 @@ impl GitHub {
         let tree = RepoTree { git_ref: git_ref.to_string(), entries, truncated: body["truncated"].as_bool().unwrap_or(false) };
         cache().trees.insert(key, (Instant::now(), tree.clone()));
         Ok(tree)
+    }
+
+    /// The `n` most recent commits with their changed files and diffs.
+    /// Costs n + 1 API requests, so it's only used when relevant. Cached a few minutes.
+    pub async fn recent_commits(&self, repo: &RepoRef, git_ref: &str, n: usize) -> Result<Vec<CommitInfo>, GhError> {
+        let key = format!("{}@{}#{}", repo.full_name(), git_ref, n).to_lowercase();
+        if let Some((at, commits)) = cache().commits.get(&key) {
+            if at.elapsed() < TREE_TTL {
+                return Ok(commits.clone());
+            }
+        }
+        let mut url = format!("{API}/repos/{}/{}/commits?per_page={n}", repo.owner, repo.repo);
+        if git_ref != "HEAD" {
+            url.push_str(&format!("&sha={}", encode_path(git_ref)));
+        }
+        let list = self.api_json(&url).await?;
+        let shas: Vec<String> = list
+            .as_array()
+            .map(|a| a.iter().filter_map(|c| c["sha"].as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let details = futures_util::future::join_all(shas.iter().map(|sha| {
+            let url = format!("{API}/repos/{}/{}/commits/{sha}", repo.owner, repo.repo);
+            async move { self.api_json(&url).await }
+        }))
+        .await;
+        let commits: Vec<CommitInfo> = details
+            .into_iter()
+            .flatten()
+            .map(|c| {
+                let sha = c["sha"].as_str().unwrap_or_default().to_string();
+                CommitInfo {
+                    short: sha.chars().take(7).collect(),
+                    message: c["commit"]["message"].as_str().unwrap_or_default().lines().next().unwrap_or_default().to_string(),
+                    date: c["commit"]["author"]["date"].as_str().unwrap_or_default().to_string(),
+                    url: c["html_url"].as_str().unwrap_or_default().to_string(),
+                    files: c["files"]
+                        .as_array()
+                        .map(|fs| {
+                            fs.iter()
+                                .take(40)
+                                .map(|f| CommitFile {
+                                    path: f["filename"].as_str().unwrap_or_default().to_string(),
+                                    status: f["status"].as_str().unwrap_or_default().to_string(),
+                                    additions: f["additions"].as_u64().unwrap_or(0),
+                                    deletions: f["deletions"].as_u64().unwrap_or(0),
+                                    patch: f["patch"].as_str().map(String::from),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    sha,
+                }
+            })
+            .collect();
+        cache().commits.insert(key, (Instant::now(), commits.clone()));
+        Ok(commits)
+    }
+
+    async fn api_json(&self, url: &str) -> Result<serde_json::Value, GhError> {
+        let resp = self
+            .get(url)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+            .await
+            .map_err(|_| GhError::Network)?;
+        let status = resp.status().as_u16();
+        if status != 200 {
+            return Err(api_error(status, resp.headers()));
+        }
+        json_value(resp).await
     }
 
     /// Raw text of one file. Cached by blob SHA.
@@ -351,6 +445,22 @@ mod live {
             let start = std::time::Instant::now();
             gh.file(&repo, &tree.git_ref, entry).await.unwrap();
             assert!(start.elapsed().as_millis() < 5);
+            // Project detection + static checks on real files.
+            let css_entry = files.iter().find(|e| e.path == "styles.css").unwrap();
+            let css = gh.file(&repo, &tree.git_ref, css_entry).await.unwrap();
+            let paths: Vec<&str> = files.iter().map(|e| e.path.as_str()).collect();
+            let project = crate::project::detect(&paths, None);
+            println!("project: {}", project.label);
+            assert!(project.has("vanilla"));
+            let every: std::collections::HashSet<String> = tree.entries.iter().map(|e| e.path.clone()).collect();
+            let checks = crate::checks::run(&[(html.clone(), text.clone()), ("styles.css".into(), css)], &every, None);
+            println!("checks: {checks:?}");
+            // Spoon-Knife's index.html really does reference forkit.gif, which isn't in the repo.
+            assert_eq!(checks.len(), 1);
+            assert!(checks[0].message.contains("forkit.gif"));
+            let commits = gh.recent_commits(&repo, &tree.git_ref, 2).await.expect("commits");
+            println!("commits: {:?}", commits.iter().map(|c| format!("{} {} ({} files)", c.short, c.message, c.files.len())).collect::<Vec<_>>());
+            assert!(!commits.is_empty());
             let missing = gh.tree(&parse_repo_url("octocat/this-repo-does-not-exist-pp").unwrap(), "HEAD").await;
             println!("missing repo: {}", missing.unwrap_err());
         });

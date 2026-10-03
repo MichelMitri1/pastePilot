@@ -5,5 +5,8 @@
   <!-- Menu bar app: no Dock icon, no app switcher entry. -->
   <key>LSUIElement</key>
   <true/>
+  <!-- Voice commands: the microphone is only used while you hold the voice shortcut. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>PastePilot listens only while you hold the voice shortcut, to understand commands like “reply to this”.</string>
 </dict>
 </plist>

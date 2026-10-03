@@ -11,6 +11,8 @@ pub const DEFAULT_MODEL: &str = "gpt-4.1-mini";
 pub const DEFAULT_SHORTCUT: &str = "Alt+R";
 pub const DEFAULT_NEW_CONVERSATION_SHORTCUT: &str = "Alt+Shift+R";
 pub const DEFAULT_DEBUG_SHORTCUT: &str = "Alt+G";
+pub const DEFAULT_CASE_SHORTCUT: &str = "Alt+A";
+pub const DEFAULT_VOICE_SHORTCUT: &str = "Alt+V";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -55,6 +57,36 @@ pub struct Settings {
     pub debug_shortcut: String,
     /// Model for code analysis (empty = same as `model`).
     pub debug_model: String,
+    /// Always compare recent commits (otherwise only when the student says something broke).
+    pub debug_compare_commits: bool,
+
+    // Reply polish and learning
+    /// Strip generic AI phrasing ("Certainly!", "It appears that") before pasting.
+    pub remove_fluff: bool,
+    /// Learn style rules from how much you edit drafts before sending.
+    pub feedback_learning: bool,
+    /// Save heavily edited replies as reply examples.
+    pub feedback_save_examples: bool,
+
+    // Multi-message cases
+    /// Adds the current selection to the case. Empty = none.
+    pub case_shortcut: String,
+
+    // Clipboard history
+    pub clipboard_history: bool,
+    /// Also record text you copy yourself (off by default; password-manager copies are always skipped).
+    pub clipboard_watch: bool,
+    pub clipboard_max_items: u32,
+    pub clipboard_max_days: u32,
+
+    // Voice commands
+    pub voice_enabled: bool,
+    /// Hold to talk. Empty = none.
+    pub voice_shortcut: String,
+
+    // Analytics
+    pub minutes_per_reply: f64,
+    pub minutes_per_debug: f64,
 }
 
 impl Default for Settings {
@@ -83,6 +115,19 @@ impl Default for Settings {
             new_conversation_shortcut: DEFAULT_NEW_CONVERSATION_SHORTCUT.into(),
             debug_shortcut: DEFAULT_DEBUG_SHORTCUT.into(),
             debug_model: DEFAULT_MODEL.into(),
+            debug_compare_commits: false,
+            remove_fluff: true,
+            feedback_learning: true,
+            feedback_save_examples: true,
+            case_shortcut: DEFAULT_CASE_SHORTCUT.into(),
+            clipboard_history: true,
+            clipboard_watch: false,
+            clipboard_max_items: 200,
+            clipboard_max_days: 14,
+            voice_enabled: false,
+            voice_shortcut: DEFAULT_VOICE_SHORTCUT.into(),
+            minutes_per_reply: 2.0,
+            minutes_per_debug: 10.0,
         }
     }
 }

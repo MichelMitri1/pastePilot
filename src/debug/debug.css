@@ -21,3 +21,20 @@
 .debug details summary { cursor: default; }
 .debug .examined { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .debug textarea[readonly] { opacity: 0.85; }
+.debug.dragging { outline: 3px dashed var(--accent); outline-offset: -8px; }
+.debug .shots { display: flex; gap: 8px; flex-wrap: wrap; }
+.debug .shot { position: relative; width: 96px; height: 64px; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; background: var(--field); }
+.debug .shot img { width: 100%; height: 100%; object-fit: cover; }
+.debug .shot.add { display: flex; align-items: center; justify-content: center; color: var(--muted); border-style: dashed; padding: 0; }
+.debug .shot .remove { position: absolute; top: 2px; right: 2px; padding: 0 5px; font-size: 11px; border-radius: 10px; background: rgba(0,0,0,0.6); color: #fff; border: none; }
+.debug .more .files { margin-top: 8px; }
+.debug .wrap-row { flex-wrap: wrap; }
+.debug .ask { background: var(--banner); border-radius: 6px; padding: 8px 10px; }
+.debug .checks { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; -webkit-user-select: text; user-select: text; }
+.debug .tag.used { color: var(--ok); }
+.debug .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.debug .segmented button { border: none; border-radius: 0; padding: 3px 8px; font-size: 12px; }
+.debug .segmented button.on { background: var(--accent); color: #fff; }
+.debug .diff .del { background: rgba(255, 69, 58, 0.14); }
+.debug .diff .add { background: rgba(48, 209, 88, 0.16); }
+.debug .diff .sign { display: inline-block; width: 14px; color: var(--muted); }

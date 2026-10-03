@@ -6,7 +6,9 @@ use crate::modes::ModeInstructions;
 use crate::prompt::DEFAULT_STYLE;
 use crate::settings::Settings;
 use crate::state::AppState;
-use crate::{flow, import, shortcut, tray};
+use crate::casebook::{self, Fix, IssueRecord};
+use crate::cliphistory::{self, ClipItem};
+use crate::{analytics, case, feedback, flow, import, shortcut, tray};
 use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_autostart::ManagerExt;
@@ -223,5 +225,133 @@ pub fn clear_all_conversations(state: State<AppState>) -> CmdResult<()> {
     db::clear_conversations(&state.db()).map_err(db_err)?;
     state.set_current_conversation(None);
     state.set_last_reply(None);
+    Ok(())
+}
+
+// ----- Fix library ----------------------------------------------------------
+
+#[tauri::command]
+pub fn list_fixes(state: State<AppState>) -> CmdResult<Vec<Fix>> {
+    casebook::list_fixes(&state.db()).map_err(db_err)
+}
+
+#[tauri::command]
+pub fn save_fix(state: State<AppState>, fix: Fix) -> CmdResult<i64> {
+    if fix.title.trim().is_empty() || fix.solution.trim().is_empty() {
+        return Err("A fix needs a title and a solution.".into());
+    }
+    casebook::save_fix(&state.db(), &fix).map_err(db_err)
+}
+
+#[tauri::command]
+pub fn delete_fix(state: State<AppState>, id: i64) -> CmdResult<()> {
+    casebook::delete_fix(&state.db(), id).map_err(db_err)
+}
+
+#[tauri::command]
+pub fn clear_fixes(state: State<AppState>) -> CmdResult<()> {
+    casebook::clear_fixes(&state.db()).map_err(db_err)
+}
+
+#[tauri::command]
+pub fn import_fixes(state: State<AppState>, text: String) -> CmdResult<usize> {
+    let items = import::parse_fixes(&text)?;
+    let mut db = state.db();
+    let tx = db.transaction().map_err(db_err)?;
+    for item in &items {
+        casebook::save_fix(&tx, item).map_err(db_err)?;
+    }
+    tx.commit().map_err(db_err)?;
+    Ok(items.len())
+}
+
+// ----- Issue history --------------------------------------------------------
+
+#[tauri::command]
+pub fn list_issues(state: State<AppState>) -> CmdResult<Vec<IssueRecord>> {
+    casebook::list_issues(&state.db(), 300).map_err(db_err)
+}
+
+#[tauri::command]
+pub fn delete_issue(state: State<AppState>, id: i64) -> CmdResult<()> {
+    casebook::delete_issue(&state.db(), id).map_err(db_err)
+}
+
+#[tauri::command]
+pub fn clear_issues(state: State<AppState>) -> CmdResult<()> {
+    casebook::clear_issues(&state.db()).map_err(db_err)
+}
+
+// ----- Clipboard history and cases -------------------------------------------
+
+#[tauri::command]
+pub fn list_clipboard(state: State<AppState>) -> CmdResult<Vec<ClipItem>> {
+    cliphistory::list(&state.db(), 500).map_err(db_err)
+}
+
+#[tauri::command]
+pub fn delete_clipboard_item(state: State<AppState>, id: i64) -> CmdResult<()> {
+    cliphistory::delete(&state.db(), id).map_err(db_err)
+}
+
+#[tauri::command]
+pub fn clear_clipboard(state: State<AppState>) -> CmdResult<()> {
+    cliphistory::clear(&state.db()).map_err(db_err)
+}
+
+#[tauri::command]
+pub fn copy_clipboard_item(state: State<AppState>, id: i64) -> CmdResult<()> {
+    let item = cliphistory::get_many(&state.db(), &[id]).into_iter().next().ok_or("That item no longer exists.")?;
+    crate::macos::pasteboard::write_string(&item.content);
+    Ok(())
+}
+
+/// Adds picked history items to the multi-message case (oldest first).
+#[tauri::command]
+pub fn case_add_items(app: AppHandle, state: State<AppState>, ids: Vec<i64>) -> CmdResult<usize> {
+    let items = cliphistory::get_many(&state.db(), &ids);
+    case::add_texts(&app, items.into_iter().map(|i| i.content).collect());
+    Ok(case::len())
+}
+
+#[tauri::command]
+pub fn case_status() -> usize {
+    case::len()
+}
+
+#[tauri::command]
+pub fn case_clear(app: AppHandle) {
+    case::clear(&app);
+}
+
+// ----- Analytics and feedback learning ----------------------------------------
+
+#[tauri::command]
+pub fn get_dashboard(state: State<AppState>, range_days: i64) -> analytics::Dashboard {
+    let s = state.settings();
+    analytics::dashboard(&state.db(), range_days, s.minutes_per_reply, s.minutes_per_debug)
+}
+
+#[tauri::command]
+pub fn reset_analytics(state: State<AppState>) -> CmdResult<()> {
+    analytics::reset(&state.db()).map_err(db_err)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Learning {
+    samples: i64,
+    profile: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_learning(state: State<AppState>) -> Learning {
+    Learning { samples: feedback::count(&state.db()), profile: state.edit_profile() }
+}
+
+#[tauri::command]
+pub fn reset_learning(state: State<AppState>) -> CmdResult<()> {
+    feedback::clear(&state.db()).map_err(db_err)?;
+    state.refresh_edit_profile();
     Ok(())
 }
