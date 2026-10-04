@@ -92,6 +92,29 @@ Use it for small bugs in a student's **public** GitHub repo, without cloning any
 - **Caching.** Trees are cached for 3 minutes. Files are cached by their content hash, so a re-analysis is instant and never stale.
 - **Private repos.** The client already accepts a token, but this version doesn't expose it, so private repositories show "Repository not found".
 
+### Assignment Review (separate from GitHub Debug)
+Reviews a **whole submission** against the official example. Open it from the menu bar with **Assignment Review…** or press **⌥⇧A**. If a student message was selected, PastePilot fills in their live site and repo links.
+
+1. **Enter three things:** the **example website**, the **student's live website** and the **student's GitHub repo**. Optionally add **requirements** (one per line), notes and screenshots. Save an assignment as a **preset** so the example URL and requirements are one click next time.
+2. **Click Review Assignment.** PastePilot:
+   - opens both sites in an invisible copy of your Chrome (JavaScript sites included), at desktop, tablet and mobile widths, and captures screenshots, page structure, console errors and broken links
+   - compares the student site with the example on what matters: sections, layout, typography, colors, images, buttons, navigation and responsiveness. It doesn't demand pixel-perfect matches.
+   - reads **only** the repo files linked to the problems, plus their stylesheets, runs the code checks, and traces each problem to a **file, line, cause and fix**, with a before/after diff
+   - shows **Requirements**, each marked Complete, Needs Fix, Missing or Unable to Verify, and never invented
+   - groups issues by severity (**Critical**, **Needs Fix**, **Minor**) and lists what passed and what couldn't be verified, with example-vs-student screenshots for each viewport
+3. **Feedback is written in your style.** Choose Shorter, Normal or More detailed, include or leave out minor issues, regenerate, then **Paste Reply**. Nothing is ever sent.
+
+**Speed and cost:**
+- Gathering the evidence takes about 3 to 8 seconds, because both sites and the repo load in parallel.
+- Then there are two AI calls, compare and trace, and the trace only runs when something needs fixing.
+- The feedback streams in as it's written.
+
+**Safety:**
+- **Sites are only viewed**, in a throwaway browser profile with background features and Keychain access turned off.
+- **Nothing from the repo is ever run.**
+- **Sites, code, requirements and screenshots are untrusted**, so instructions inside them are ignored.
+- **Without Chrome (or Edge, Brave or Chromium),** pages are read as plain HTML and visual checks show as Unable to Verify.
+
 ### One-click GitHub Debug
 1. Select the student's message, which should contain their repo link and the problem.
 2. Press **⌥G**.
@@ -158,12 +181,16 @@ src/                         React Settings window
   components/common.tsx      shortcut recorder, confirm button, toggles
   sections/                  General, AI, Style, Examples, Knowledge, Memory, Shortcuts
   debug/DebugApp.tsx         GitHub Debug window (same bundle, chosen by window label)
+  review/ReviewApp.tsx       Assignment Review window
 src-tauri/src/
   flow.rs        ★ generate + rewrite workflows (never presses Return)
   memory.rs      conversation scoping, de-duplication, history size limit
   modes.rs       classifier + default mode instructions
   retrieval.rs   FTS5 search for knowledge + examples, style profile
   debug.rs       GitHub Debug Mode: file planning, analysis, diagnosis, reply, paste
+  review.rs      Assignment Review Mode: compare sites, trace to code, feedback, presets
+  browser.rs     headless Chrome inspection: rendered DOM, console errors, screenshots, broken links
+  codebase.rs    shared read-only repo reader (used by GitHub Debug and Assignment Review)
   checks.rs      deterministic static checks (imports, casing, exports, deps, JSX, HTML, CSS)
   project.rs     project type detection
   casebook.rs    issue history + fix library
@@ -226,6 +253,9 @@ fixes            (id, title, problem, solution, snippet, tags, project_type, use
 clipboard_history(id, kind 'student'|'reply'|'copied', content, source, created_at)
 events           (id, kind, mode, detail, value, created_at)      -- analytics, counts only
 feedback         (id, mode, student_message, generated, final, similarity, created_at)
+
+-- migration 3
+assignment_presets (id, name, example_url, requirements, updated_at)
 ```
 
 Settings has separate delete buttons for all conversation history, all reply examples, and the whole knowledge base.

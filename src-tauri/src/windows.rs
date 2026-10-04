@@ -20,6 +20,28 @@ pub fn take_pending_section() -> Option<String> {
     PENDING_SECTION.lock().unwrap_or_else(|e| e.into_inner()).take().map(String::from)
 }
 pub const DEBUG_LABEL: &str = "debug";
+pub const REVIEW_LABEL: &str = "review";
+
+/// Assignment Review window (its own feature; same frontend bundle, chosen by window label).
+pub fn open_review(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(REVIEW_LABEL) {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let built = WebviewWindowBuilder::new(app, REVIEW_LABEL, WebviewUrl::App("index.html".into()))
+        .title("Assignment Review")
+        .inner_size(900.0, 900.0)
+        .min_inner_size(620.0, 560.0)
+        .center()
+        .focused(true)
+        .disable_drag_drop_handler()
+        .build();
+    if let Ok(window) = built {
+        let _ = window.set_focus();
+    }
+}
 
 /// GitHub Debug Mode window. Same frontend bundle; it renders the debug UI by window label.
 pub fn open_debug(app: &AppHandle) {

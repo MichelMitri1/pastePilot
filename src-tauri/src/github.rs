@@ -156,6 +156,13 @@ fn cache() -> std::sync::MutexGuard<'static, Cache> {
     CACHE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+static SHARED: LazyLock<GitHub> = LazyLock::new(|| GitHub::new(None));
+
+/// One client (one connection pool, one cache) for the whole app.
+pub fn shared() -> &'static GitHub {
+    &SHARED
+}
+
 pub struct GitHub {
     client: reqwest::Client,
     token: Option<String>,

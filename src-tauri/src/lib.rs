@@ -30,14 +30,19 @@
 //! - feedback.rs   learns style rules from your edits
 //! - fluff.rs      removes generic AI phrasing
 //! - voice.rs      hold-to-talk voice commands
+//! - review.rs     Assignment Review Mode (example site vs student site vs repo)
+//! - browser.rs    headless website inspection (rendered DOM, console, screenshots)
+//! - codebase.rs   shared read-only repository reader (GitHub Debug + Assignment Review)
 //! - windows.rs    Settings and GitHub Debug windows
 //! - commands.rs   commands called by the React Settings UI
 //! - macos/        Accessibility, key events, clipboard, app focus, HUD, rewrite bar
 
 mod analytics;
+mod browser;
 mod case;
 mod casebook;
 mod checks;
+mod codebase;
 mod cliphistory;
 mod commands;
 mod db;
@@ -56,6 +61,7 @@ mod project;
 mod prompt;
 mod repo_search;
 mod retrieval;
+mod review;
 mod rewrite;
 mod selection;
 mod sent_watch;
@@ -131,6 +137,13 @@ pub fn run() {
             commands::get_learning,
             commands::reset_learning,
             windows::take_pending_section,
+            review::review_get_context,
+            review::review_run,
+            review::review_feedback,
+            review::review_paste,
+            review::review_copy,
+            review::review_save_preset,
+            review::review_delete_preset,
             updater::check_for_update,
             updater::install_update,
         ])

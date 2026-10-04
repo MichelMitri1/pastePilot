@@ -3,10 +3,10 @@
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{
-    NSBitmapImageFileType, NSBitmapImageRep, NSImageCompressionFactor, NSPasteboard, NSPasteboardItem, NSPasteboardType,
-    NSPasteboardTypePNG, NSPasteboardTypeString, NSPasteboardTypeTIFF, NSPasteboardWriting,
+    NSPasteboard, NSPasteboardItem, NSPasteboardType, NSPasteboardTypePNG, NSPasteboardTypeString, NSPasteboardTypeTIFF,
+    NSPasteboardWriting,
 };
-use objc2_foundation::{NSArray, NSData, NSDictionary, NSNumber, NSString};
+use objc2_foundation::{NSArray, NSData, NSString};
 
 fn general() -> Retained<NSPasteboard> {
     NSPasteboard::generalPasteboard()
@@ -94,17 +94,7 @@ pub fn has_image() -> bool {
 
 /// The clipboard image as a JPEG data: URL (compact enough to send with an analysis).
 pub fn image_data_url() -> Option<String> {
-    use base64::Engine;
     let pb = general();
     let data = unsafe { pb.dataForType(NSPasteboardTypePNG).or_else(|| pb.dataForType(NSPasteboardTypeTIFF)) }?;
-    let rep = NSBitmapImageRep::imageRepWithData(&data)?;
-    let quality = NSNumber::numberWithDouble(0.82);
-    let key: &NSString = unsafe { NSImageCompressionFactor };
-    let props = NSDictionary::from_slices(&[key], &[quality.as_ref()]);
-    let jpeg = unsafe { rep.representationUsingType_properties(NSBitmapImageFileType::JPEG, &props) }?;
-    let bytes = jpeg.to_vec();
-    if bytes.is_empty() || bytes.len() > 4_000_000 {
-        return None;
-    }
-    Some(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+    super::image::jpeg_data_url(&data.to_vec(), 0.82, 4_000_000)
 }

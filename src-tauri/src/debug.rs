@@ -29,7 +29,8 @@ use crate::casebook::{self, NewIssue};
 use crate::checks::{self, Check};
 use crate::db;
 use crate::flow;
-use crate::github::{self, CommitInfo, GhError, GitHub, RepoRef, RepoTree, TreeEntry};
+use crate::codebase::{self, language, num, snippet, strip_fences, truncate_at_line, Limits, Snippet, Workspace};
+use crate::github::{self, CommitInfo, RepoRef, TreeEntry};
 use crate::macos::{action_bar, apps, ax, hud, pasteboard};
 use crate::memory::{self, Scope, Turn};
 use crate::modes::{self, Mode};
@@ -110,15 +111,6 @@ pub struct Review {
     include_snippet: bool,
     repo_url: String,
     issue: String,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Snippet {
-    start_line: u32,
-    lines: Vec<String>,
-    highlight_start: u32,
-    highlight_end: u32,
 }
 
 #[derive(Serialize, Clone)]
@@ -227,7 +219,6 @@ struct Session {
 }
 
 static SESSION: LazyLock<Mutex<Session>> = LazyLock::new(|| Mutex::new(Session::default()));
-static GITHUB: LazyLock<GitHub> = LazyLock::new(|| GitHub::new(None));
 /// One-click runs without the window: progress goes to the status pill instead.
 static HEADLESS: AtomicBool = AtomicBool::new(false);
 static ONE_CLICK_BUSY: AtomicBool = AtomicBool::new(false);
@@ -465,72 +456,6 @@ pub fn debug_get_context(app: AppHandle) -> DebugContext {
 // Analysis
 // ---------------------------------------------------------------------------
 
-struct Workspace {
-    repo: RepoRef,
-    tree: RepoTree,
-    by_path: HashMap<String, TreeEntry>,
-    /// Readable source files (candidates for reading).
-    all_paths: HashSet<String>,
-    /// Every file in the tree, including images and other binaries (for "does this path exist?").
-    every_path: HashSet<String>,
-    /// (path, contents read, truncated?)
-    files: Vec<(String, Arc<str>, bool)>,
-    total_chars: usize,
-    notes: Vec<String>,
-}
-
-impl Workspace {
-    fn has(&self, path: &str) -> bool {
-        self.files.iter().any(|(p, _, _)| p == path)
-    }
-
-    fn content(&self, path: &str) -> Option<&str> {
-        self.files.iter().find(|(p, _, _)| p == path).map(|(_, c, _)| c.as_ref())
-    }
-
-    /// Fetches files in parallel (cached by SHA), within the file and size limits.
-    async fn fetch(&mut self, paths: Vec<String>) {
-        let wanted: Vec<TreeEntry> = paths
-            .into_iter()
-            .filter(|p| !self.has(p))
-            .filter_map(|p| self.by_path.get(&p).cloned())
-            .take(MAX_FILES.saturating_sub(self.files.len()))
-            .collect();
-        let results =
-            futures_util::future::join_all(wanted.iter().map(|e| GITHUB.file(&self.repo, &self.tree.git_ref, e))).await;
-        for (entry, result) in wanted.into_iter().zip(results) {
-            match result {
-                Ok(text) => {
-                    let room = MAX_TOTAL_CHARS.saturating_sub(self.total_chars);
-                    if room < 500 {
-                        self.notes.push(format!("Skipped {} (context limit reached).", entry.path));
-                        continue;
-                    }
-                    let limit = MAX_FILE_CHARS.min(room);
-                    let truncated = text.len() > limit;
-                    let kept: Arc<str> = if truncated { truncate_at_line(&text, limit).into() } else { text };
-                    self.total_chars += kept.len();
-                    if truncated {
-                        self.notes.push(format!("{} is long; only the first part was read.", entry.path));
-                    }
-                    self.files.push((entry.path, kept, truncated));
-                }
-                Err(GhError::Binary) => self.notes.push(format!("Skipped {} (not a text file).", entry.path)),
-                Err(e) => self.notes.push(format!("Couldn't read {}: {e}", entry.path)),
-            }
-        }
-    }
-}
-
-fn truncate_at_line(text: &str, limit: usize) -> String {
-    let mut end = limit.min(text.len());
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    let cut = text[..end].rfind('\n').unwrap_or(end);
-    text[..cut].to_string()
-}
-
 fn valid_screenshots(list: &[String]) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     for s in list.iter().take(MAX_SCREENSHOTS) {
@@ -677,8 +602,8 @@ async fn analyze_core(app: &AppHandle, request: AnalyzeRequest) -> Result<Analys
             progress(&app, &format!("Reading {} more: {}…", requested.len(), short_list(&requested)));
             e.ws.fetch(requested).await;
             // New files can reveal new import problems.
-            let read: Vec<(String, Arc<str>)> = e.ws.files.iter().map(|(p, c, _)| (p.clone(), c.clone())).collect();
-            let pkg = package_json(&e.ws);
+            let read = e.ws.read();
+            let pkg = e.ws.package_json();
             e.checks = checks::run(&read, &e.ws.every_path, pkg.as_ref());
             continue;
         }
@@ -744,46 +669,17 @@ async fn gather_repo(
     has_screenshots: bool,
 ) -> Result<RepoEvidence, String> {
     progress(app, "Reading repository…");
-    let mut notes = Vec::new();
-    let tree = match &repo.branch {
-        Some(branch) => match GITHUB.tree(&repo, branch).await {
-            Ok(t) => t,
-            Err(GhError::NotFound) => {
-                let t = GITHUB.tree(&repo, "HEAD").await.map_err(|e| e.to_string())?;
-                notes.push(format!("Branch \"{branch}\" wasn't found, so the default branch was used."));
-                t
-            }
-            Err(e) => return Err(e.to_string()),
-        },
-        None => GITHUB.tree(&repo, "HEAD").await.map_err(|e| e.to_string())?,
-    };
-    if tree.truncated {
-        notes.push("This repository is very large; only part of its file list was available.".into());
-    }
-    let candidates: Vec<TreeEntry> = search::candidates(&tree.entries).into_iter().cloned().collect();
-    if candidates.is_empty() {
-        return Err("No readable code files were found in this repository.".into());
-    }
+    let limits = Limits { max_files: MAX_FILES, max_file_chars: MAX_FILE_CHARS, max_total_chars: MAX_TOTAL_CHARS };
+    let (mut ws, candidates) = codebase::open(repo.clone(), limits).await?;
     let refs: Vec<&TreeEntry> = candidates.iter().collect();
     let paths: Vec<&str> = candidates.iter().map(|e| e.path.as_str()).collect();
-
-    let mut ws = Workspace {
-        by_path: candidates.iter().map(|e| (e.path.clone(), e.clone())).collect(),
-        all_paths: candidates.iter().map(|e| e.path.clone()).collect(),
-        every_path: tree.entries.iter().map(|e| e.path.clone()).collect(),
-        repo: repo.clone(),
-        tree,
-        files: Vec::new(),
-        total_chars: 0,
-        notes,
-    };
 
     // Project type: package.json is tiny and tells us the stack.
     let root_pkg = refs.iter().filter(|e| search::basename(&e.path) == "package.json").min_by_key(|e| e.path.len()).map(|e| e.path.clone());
     if let Some(pkg) = &root_pkg {
         ws.fetch(vec![pkg.clone()]).await;
     }
-    let pkg_json = package_json(&ws);
+    let pkg_json = ws.package_json();
     let project = project::detect(&paths, pkg_json.as_ref());
 
     // Initial files.
@@ -827,7 +723,7 @@ async fn gather_repo(
     // Recent commits (n + 1 API requests, so only when it helps).
     let commits = if compare {
         progress(app, "Comparing recent commits…");
-        match GITHUB.recent_commits(&repo, &ws.tree.git_ref, COMMITS_TO_COMPARE).await {
+        match github::shared().recent_commits(&repo, &ws.tree.git_ref, COMMITS_TO_COMPARE).await {
             Ok(c) => c,
             Err(e) => {
                 ws.notes.push(format!("Couldn't compare commits: {e}"));
@@ -848,14 +744,6 @@ async fn gather_repo(
         candidates: candidates.clone(),
         ws,
     })
-}
-
-fn package_json(ws: &Workspace) -> Option<Value> {
-    ws.files
-        .iter()
-        .filter(|(p, _, _)| search::basename(p) == "package.json")
-        .min_by_key(|(p, _, _)| p.len())
-        .and_then(|(_, c, _)| serde_json::from_str(c).ok())
 }
 
 /// Initial files: names you typed, paths in error messages, filename/path search, topic files.
@@ -1075,37 +963,6 @@ fn retrieval_trim(s: &str, n: usize) -> String {
     crate::retrieval::truncate(s, n)
 }
 
-fn num(v: &Value) -> Option<u32> {
-    v.as_u64().map(|n| n as u32).or_else(|| v.as_str().and_then(|s| s.trim().parse().ok())).filter(|n| *n > 0)
-}
-
-fn language(path: &str) -> String {
-    match path.rsplit_once('.').map(|(_, e)| e.to_lowercase()).as_deref() {
-        Some("js" | "mjs" | "cjs") => "javascript",
-        Some("jsx") => "jsx",
-        Some("ts") => "typescript",
-        Some("tsx") => "tsx",
-        Some("css") => "css",
-        Some("scss") => "scss",
-        Some("html" | "htm") => "html",
-        Some("json") => "json",
-        Some("vue") => "vue",
-        Some("py") => "python",
-        _ => "",
-    }
-    .to_string()
-}
-
-/// Removes ``` fences the model sometimes adds around "after".
-fn strip_fences(s: &str) -> String {
-    let t = s.trim_matches('\n');
-    if let Some(rest) = t.trim_start().strip_prefix("```") {
-        let body = rest.split_once('\n').map(|(_, b)| b).unwrap_or("");
-        return body.trim_end().trim_end_matches("```").trim_end().to_string();
-    }
-    t.to_string()
-}
-
 fn build_analysis(
     evidence: Option<&RepoEvidence>,
     v: &Value,
@@ -1257,26 +1114,6 @@ fn build_analysis(
         screenshots,
         issue_type,
     }
-}
-
-/// A few lines around the finding, taken from the real file.
-fn snippet(content: &str, start: u32, end: u32) -> Snippet {
-    let from = start.saturating_sub(2).max(1);
-    let to = (end + 2).min(from + 13);
-    let lines = content
-        .lines()
-        .enumerate()
-        .filter(|(i, _)| (*i as u32 + 1) >= from && (*i as u32 + 1) <= to)
-        .map(|(_, l)| {
-            let l = l.trim_end();
-            if l.chars().count() > 180 {
-                format!("{}…", l.chars().take(180).collect::<String>())
-            } else {
-                l.to_string()
-            }
-        })
-        .collect();
-    Snippet { start_line: from, lines, highlight_start: start, highlight_end: end }
 }
 
 // ---------------------------------------------------------------------------

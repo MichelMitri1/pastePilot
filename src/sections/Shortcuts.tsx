@@ -38,6 +38,13 @@ export default function Shortcuts({ settings, update }: SectionProps) {
           </div>
         </div>
         <div className="field">
+          <label>Assignment Review</label>
+          <div className="row">
+            <ShortcutInput value={settings.reviewShortcut} onChange={(v) => update("reviewShortcut", v)} />
+            <button className="link" onClick={() => update("reviewShortcut", "")}>None</button>
+          </div>
+        </div>
+        <div className="field">
           <label>GitHub Debug</label>
           <div className="row">
             <ShortcutInput value={settings.debugShortcut} onChange={(v) => update("debugShortcut", v)} />

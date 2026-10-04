@@ -42,7 +42,7 @@ pub fn register_all(app: &AppHandle, settings: &Settings) -> Result<(), String> 
 /// Hotkeys besides "generate". Voice is only registered while voice commands are on,
 /// so ⌥V keeps working normally otherwise.
 fn optional_shortcuts(s: &Settings) -> Vec<&str> {
-    let mut v = vec![s.new_conversation_shortcut.trim(), s.debug_shortcut.trim(), s.case_shortcut.trim()];
+    let mut v = vec![s.new_conversation_shortcut.trim(), s.debug_shortcut.trim(), s.case_shortcut.trim(), s.review_shortcut.trim()];
     if s.voice_enabled {
         v.push(s.voice_shortcut.trim());
     }
@@ -58,6 +58,7 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) -> Result<(), Stri
         new.debug_shortcut.trim(),
         new.case_shortcut.trim(),
         new.voice_shortcut.trim(),
+        new.review_shortcut.trim(),
     ];
     for (i, s) in all.iter().enumerate() {
         if s.is_empty() {
@@ -106,6 +107,10 @@ pub fn dispatch(app: &AppHandle, pressed: &Shortcut, key_state: ShortcutState) {
         return;
     }
     if key_state != ShortcutState::Pressed {
+        return;
+    }
+    if matches(&settings.review_shortcut) {
+        crate::review::open(app.clone(), false);
         return;
     }
     if matches(&settings.case_shortcut) {

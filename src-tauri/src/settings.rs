@@ -13,6 +13,7 @@ pub const DEFAULT_NEW_CONVERSATION_SHORTCUT: &str = "Alt+Shift+R";
 pub const DEFAULT_DEBUG_SHORTCUT: &str = "Alt+G";
 pub const DEFAULT_CASE_SHORTCUT: &str = "Alt+A";
 pub const DEFAULT_VOICE_SHORTCUT: &str = "Alt+V";
+pub const DEFAULT_REVIEW_SHORTCUT: &str = "Alt+Shift+A";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -72,6 +73,10 @@ pub struct Settings {
     /// Save heavily edited replies as reply examples.
     pub feedback_save_examples: bool,
 
+    // Assignment Review
+    /// Opens Assignment Review. Empty = none.
+    pub review_shortcut: String,
+
     // Multi-message cases
     /// Adds the current selection to the case. Empty = none.
     pub case_shortcut: String,
@@ -126,6 +131,7 @@ impl Default for Settings {
             feedback_learning: true,
             feedback_save_examples: true,
             case_shortcut: DEFAULT_CASE_SHORTCUT.into(),
+            review_shortcut: DEFAULT_REVIEW_SHORTCUT.into(),
             clipboard_history: true,
             clipboard_watch: false,
             clipboard_max_items: 200,

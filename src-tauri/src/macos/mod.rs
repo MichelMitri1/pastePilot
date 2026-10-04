@@ -6,5 +6,6 @@ pub mod apps;
 pub mod ax;
 pub mod focus_tracker;
 pub mod hud;
+pub mod image;
 pub mod keys;
 pub mod pasteboard;

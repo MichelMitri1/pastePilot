@@ -38,6 +38,7 @@ export interface Settings {
   debugModel: string;
   debugCompareCommits: boolean;
   debugOneClick: boolean;
+  reviewShortcut: string;
   debugIncludeSnippet: boolean;
   removeFluff: boolean;
   feedbackLearning: boolean;
@@ -302,3 +303,76 @@ export const timeAgo = (unixSeconds: number) => {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 };
+
+// ----- Assignment Review (separate feature) -----
+
+export interface Preset {
+  id?: number | null;
+  name: string;
+  exampleUrl: string;
+  requirements: string;
+}
+
+export interface ReviewContext {
+  studentUrl: string;
+  repoUrl: string;
+  notes: string;
+  hasTarget: boolean;
+  conversation: string | null;
+  presets: Preset[];
+  chrome: boolean;
+  screenshot: string | null;
+}
+
+export interface SiteSummary {
+  url: string;
+  title: string;
+  ok: boolean;
+  rendered: boolean;
+  shots: { viewport: string; width: number; dataUrl: string }[];
+  consoleErrors: string[];
+  brokenLinks: string[];
+  error: string | null;
+}
+
+export interface ReviewItem {
+  area: string;
+  status: "complete" | "needs_fix" | "missing" | "broken" | "unable_to_verify";
+  severity: "critical" | "needs_fix" | "minor" | "none";
+  viewport: string;
+  detail: string;
+  file: string | null;
+  url: string | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  cause: string;
+  fix: string;
+  snippet: Snippet | null;
+  before: string | null;
+  after: string | null;
+  language: string;
+}
+
+export interface ReviewResult {
+  summary: string;
+  strengths: string[];
+  requirements: { requirement: string; status: "complete" | "needs_fix" | "missing" | "unable_to_verify"; note: string }[];
+  items: ReviewItem[];
+  example: SiteSummary;
+  student: SiteSummary;
+  repo: string;
+  project: { label: string; tags: string[] } | null;
+  checks: Check[];
+  examined: string[];
+  notes: string[];
+}
+
+export const reviewGetContext = () => invoke<ReviewContext>("review_get_context");
+export const reviewRun = (request: {
+  exampleUrl: string; studentUrl: string; repoUrl: string; requirements: string; notes: string; screenshots: string[]; viewports: string[];
+}) => invoke<ReviewResult>("review_run", { request });
+export const reviewFeedback = (options: { length: string; includeMinor: boolean }) => invoke<string>("review_feedback", { options });
+export const reviewPaste = (reply: string) => invoke<void>("review_paste", { reply });
+export const reviewCopy = (reply: string) => invoke<void>("review_copy", { reply });
+export const reviewSavePreset = (preset: Preset) => invoke<Preset[]>("review_save_preset", { preset });
+export const reviewDeletePreset = (id: number) => invoke<Preset[]>("review_delete_preset", { id });

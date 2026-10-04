@@ -183,6 +183,16 @@ const MIGRATIONS: &[&str] = &[
         created_at       INTEGER NOT NULL
     );
     "#,
+    // 3: Assignment Review presets (example site + requirements per assignment)
+    r#"
+    CREATE TABLE assignment_presets (
+        id            INTEGER PRIMARY KEY,
+        name          TEXT    NOT NULL,
+        example_url   TEXT    NOT NULL,
+        requirements  TEXT    NOT NULL DEFAULT '',
+        updated_at    INTEGER NOT NULL
+    );
+    "#,
 ];
 
 pub fn now() -> i64 {
