@@ -92,6 +92,25 @@ Use it for small bugs in a student's **public** GitHub repo, without cloning any
 - **Caching.** Trees are cached for 3 minutes. Files are cached by their content hash, so a re-analysis is instant and never stale.
 - **Private repos.** The client already accepts a token, but this version doesn't expose it, so private repositories show "Repository not found".
 
+### One-click GitHub Debug
+1. Select the student's message, which should contain their repo link and the problem.
+2. Press **⌥G**.
+
+PastePilot detects the repo URL and the issue, picks the relevant files, diagnoses the problem, writes the reply in your style and pastes it. The window never opens, and nothing is ever sent.
+
+- **Progress** shows in the status pill. When it's done, the pill says what it found, for example "Reply pasted · high confidence · styles.css:42".
+- **Diagnosis** on the rewrite bar opens the full details: file, lines, before/after diff and checks.
+- **When only a link is selected,** the student's earlier message in this conversation is used as the issue.
+- **Screenshots:** right-click the student's screenshot and choose **Copy Image** (or take one with ⌃⇧⌘4), then select the message and press ⌥G. Only screenshots copied in the last 5 minutes are used. Screenshots are evidence of symptoms; the code stays the source of truth for the cause.
+- **The manual window opens instead when:**
+  - there's no repo URL
+  - there's no problem description
+  - you choose **GitHub Debug…** from the menu bar
+  - one-click is turned off under AI
+  - analysis fails, in which case everything is pre-filled
+- **Low confidence** pastes a reply that asks for exactly what's missing.
+- **If you switch tickets** while it's working, the reply is copied instead of pasted, so it can't land in the wrong chat.
+
 ### Debugging power-ups
 - **Screenshots.** Paste one with ⌘V, drop it in, or choose up to three in the GitHub Debug window. They're downscaled locally and sent with the analysis. Without a repo URL, PastePilot can diagnose from the screenshot and message alone.
 - **Auto-detected repo URL.** The URL is picked up from the selected message or earlier in the conversation. After ⌥R, if the message had a repo link, the status pill offers ⌥G.
