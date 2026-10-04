@@ -19,6 +19,11 @@
 //!   → low confidence ⇒ ask the student for exactly what's missing
 //!   → reply in your usual style (same pipeline as ⌥R), snippet optional
 //!   → Paste Reply (same paste as ⌥R; never presses Enter)
+//!
+//! One-click: when the selected message (or this conversation) has a GitHub
+//! repo URL and a problem description, ⌥G runs the whole pipeline without
+//! opening the window and pastes the reply. A screenshot you copied in the
+//! last few minutes is included. Missing repo URL → the window opens instead.
 
 use crate::casebook::{self, NewIssue};
 use crate::checks::{self, Check};
@@ -35,6 +40,7 @@ use crate::{analytics, case, cliphistory, prompt, selection, windows};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
@@ -89,6 +95,21 @@ pub struct DebugContext {
     /// Messages combined from a multi-message case.
     case_messages: usize,
     compare_commits_default: bool,
+    include_snippet_default: bool,
+    /// A screenshot copied in the last few minutes (data: URL), pre-attached and removable.
+    screenshot: Option<String>,
+    /// Set when the window opens to review the last one-click diagnosis.
+    review: Option<Review>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Review {
+    analysis: Analysis,
+    reply: String,
+    include_snippet: bool,
+    repo_url: String,
+    issue: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -179,6 +200,7 @@ struct Target {
     issue: String,
     scope: Option<Scope>,
     case_messages: usize,
+    screenshot: Option<String>,
 }
 
 #[derive(Clone)]
@@ -191,6 +213,9 @@ struct Stored {
     conversation_id: Option<i64>,
     history_id: Option<i64>,
     reply_context: Option<String>,
+    reply: Option<String>,
+    include_snippet: bool,
+    repo_url: String,
 }
 
 #[derive(Default)]
@@ -203,13 +228,62 @@ struct Session {
 
 static SESSION: LazyLock<Mutex<Session>> = LazyLock::new(|| Mutex::new(Session::default()));
 static GITHUB: LazyLock<GitHub> = LazyLock::new(|| GitHub::new(None));
+/// One-click runs without the window: progress goes to the status pill instead.
+static HEADLESS: AtomicBool = AtomicBool::new(false);
+static ONE_CLICK_BUSY: AtomicBool = AtomicBool::new(false);
+/// Next window open shows the last diagnosis instead of a fresh form.
+static REVIEW: AtomicBool = AtomicBool::new(false);
+/// Screenshots you copied this long ago or less are attached automatically.
+const RECENT_SCREENSHOT: Duration = Duration::from_secs(300);
 
 fn session() -> MutexGuard<'static, Session> {
     SESSION.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn progress(app: &AppHandle, text: &str) {
-    let _ = app.emit_to(WINDOW_LABEL, "debug-progress", text);
+    if HEADLESS.load(Ordering::SeqCst) {
+        hud::show(app, &format!("GitHub Debug · {text}"), None);
+    } else {
+        let _ = app.emit_to(WINDOW_LABEL, "debug-progress", text);
+    }
+}
+
+/// Removes URLs so "here's my repo https://github.com/a/b" isn't mistaken for a problem description.
+fn strip_urls(text: &str) -> String {
+    text.split_whitespace().filter(|w| !w.contains("://") && !w.starts_with("github.com/")).collect::<Vec<_>>().join(" ")
+}
+
+/// Does this text actually describe a problem (beyond a bare link or "hi")?
+fn describes_problem(text: &str) -> bool {
+    strip_urls(text).split_whitespace().filter(|w| w.chars().filter(|c| c.is_alphabetic()).count() >= 2).count() >= 3
+}
+
+/// Repo URL for this case: from the message, then this conversation, then the last one used here.
+/// Also returns how many earlier messages exist and the recent student messages (newest first).
+fn detect_repo(app: &AppHandle, text: &str, scope: Option<&Scope>) -> (Option<String>, usize, Vec<String>) {
+    let state = app.state::<AppState>();
+    let settings = state.settings();
+    let mut repo_url = github::find_repo_url(text);
+    let mut history_count = 0;
+    let mut students = Vec::new();
+    if let Some(scope) = scope {
+        {
+            let db = state.db();
+            let since = db::now() - i64::from(settings.memory_expire_hours.max(1)) * 3600;
+            if let Ok(Some(conv)) = db::find_active_conversation(&db, &scope.key, since) {
+                let msgs = db::last_messages(&db, conv, 30).unwrap_or_default();
+                history_count = msgs.len();
+                if repo_url.is_none() {
+                    repo_url = msgs.iter().find_map(|m| github::find_repo_url(&m.content));
+                }
+                students = msgs.into_iter().filter(|m| m.role == db::Role::Student).map(|m| m.content).collect();
+            }
+        }
+        if repo_url.is_none() {
+            repo_url = session().repo_by_scope.get(&scope.key).cloned();
+        }
+    }
+    (repo_url, history_count, students)
 }
 
 /// "It was working before", "after I pushed"… → worth comparing recent commits.
@@ -242,13 +316,15 @@ pub fn open(app: AppHandle, from_menu: bool) {
             let pid = frontmost.unwrap_or_default();
             let (memory_on, auto) = (settings.memory_enabled, settings.memory_auto_detect);
             let trusted = ax::is_trusted();
-            let (selected, scope) = tauri::async_runtime::spawn_blocking(move || {
+            let (selected, scope, screenshot) = tauri::async_runtime::spawn_blocking(move || {
+                // Read a just-copied screenshot before the selection capture borrows the clipboard.
+                let screenshot = cliphistory::recent_image(RECENT_SCREENSHOT);
                 if !trusted {
-                    return (String::new(), None);
+                    return (String::new(), None, screenshot);
                 }
                 let text = selection::capture(pid).unwrap_or_default();
                 let scope = memory_on.then(|| memory::detect_scope(pid, auto));
-                (text, scope)
+                (text, scope, screenshot)
             })
             .await
             .unwrap_or_default();
@@ -262,47 +338,122 @@ pub fn open(app: AppHandle, from_menu: bool) {
                     Some(combined) => (combined, pending + usize::from(!selected.trim().is_empty())),
                     None => (selected.trim().to_string(), 0),
                 };
-            session().target = Some(Target { pid: Some(pid), issue, scope, case_messages });
+
+            // One-click: repo URL + a problem description → diagnose and paste, no window.
+            let plan = if settings.debug_one_click && !from_menu && trusted {
+                one_click_plan(&app, &issue, scope.as_ref())
+            } else {
+                None
+            };
+            session().target = Some(Target { pid: Some(pid), issue, scope, case_messages, screenshot });
+            if let Some(plan) = plan {
+                one_click(app.clone(), plan).await;
+                return;
+            }
         }
         windows::open_debug(&app);
         let _ = app.emit_to(WINDOW_LABEL, "debug-context", context(&app));
     });
 }
 
-fn context(app: &AppHandle) -> DebugContext {
-    let state = app.state::<AppState>();
-    let settings = state.settings();
-    let s = session();
-    let target = s.target.clone();
-    let issue = target.as_ref().map(|t| t.issue.clone()).unwrap_or_default();
-    let scope = target.as_ref().and_then(|t| t.scope.clone());
+struct OneClick {
+    repo_url: String,
+    issue: String,
+}
 
-    // Repo URL: from the message, then from this conversation, then the last one used here.
-    let mut repo_url = github::find_repo_url(&issue);
-    let mut history_count = 0;
-    if let Some(scope) = &scope {
-        let db = state.db();
-        let since = db::now() - i64::from(settings.memory_expire_hours.max(1)) * 3600;
-        if let Ok(Some(conv)) = db::find_active_conversation(&db, &scope.key, since) {
-            let msgs = db::last_messages(&db, conv, 30).unwrap_or_default();
-            history_count = msgs.len();
-            if repo_url.is_none() {
-                repo_url = msgs.iter().find_map(|m| github::find_repo_url(&m.content));
+/// Repo URL and issue for a one-click run, or None (→ the window opens instead).
+fn one_click_plan(app: &AppHandle, selected: &str, scope: Option<&Scope>) -> Option<OneClick> {
+    let (repo_url, _, students) = detect_repo(app, selected, scope);
+    let repo_url = repo_url?;
+    let issue = if describes_problem(selected) {
+        selected.to_string()
+    } else {
+        // Only a link was selected: use the student's latest message that describes the problem.
+        let earlier = students.into_iter().find(|m| describes_problem(m))?;
+        if selected.trim().is_empty() { earlier } else { format!("{earlier}\n\n{}", selected.trim()) }
+    };
+    Some(OneClick { repo_url, issue })
+}
+
+/// The whole GitHub Debug pipeline without the window: analyze → reply → paste.
+async fn one_click(app: AppHandle, plan: OneClick) {
+    if ONE_CLICK_BUSY.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    HEADLESS.store(true, Ordering::SeqCst);
+    let settings = app.state::<AppState>().settings();
+    let screenshots: Vec<String> = session().target.as_ref().and_then(|t| t.screenshot.clone()).into_iter().collect();
+    let repo_name = github::parse_repo_url(&plan.repo_url).map(|r| r.full_name()).unwrap_or_default();
+    progress(&app, &format!("{repo_name}{}", if screenshots.is_empty() { "" } else { " + your copied screenshot" }));
+
+    let request = AnalyzeRequest {
+        repo_url: plan.repo_url,
+        issue: plan.issue,
+        files: Vec::new(),
+        screenshots,
+        compare_commits: false,
+    };
+    let result = match analyze_core(&app, request).await {
+        Ok(analysis) => {
+            let include = settings.debug_include_snippet
+                && analysis.status == "found"
+                && analysis.findings.iter().any(|f| f.after.is_some());
+            match generate_reply_core(&app, include, false).await {
+                Ok(reply) => {
+                    HEADLESS.store(false, Ordering::SeqCst);
+                    paste_core(&app, reply, true).await
+                }
+                Err(e) => Err(e),
             }
         }
-        if repo_url.is_none() {
-            repo_url = s.repo_by_scope.get(&scope.key).cloned();
-        }
+        Err(e) => Err(e),
+    };
+    HEADLESS.store(false, Ordering::SeqCst);
+    ONE_CLICK_BUSY.store(false, Ordering::SeqCst);
+    if let Err(message) = result {
+        // Nothing is lost: open the window with everything pre-filled.
+        hud::show(&app, &message, Some(Duration::from_secs(4)));
+        windows::open_debug(&app);
+        let _ = app.emit_to(WINDOW_LABEL, "debug-context", context(&app));
     }
+}
+
+fn context(app: &AppHandle) -> DebugContext {
+    let settings = app.state::<AppState>().settings();
+    let target = session().target.clone();
+    let issue = target.as_ref().map(|t| t.issue.clone()).unwrap_or_default();
+    let scope = target.as_ref().and_then(|t| t.scope.clone());
+    let (repo_url, history_count, _) = detect_repo(app, &issue, scope.as_ref());
+    let review = if REVIEW.swap(false, Ordering::SeqCst) {
+        session().stored.clone().map(|st| Review {
+            analysis: st.analysis,
+            reply: st.reply.unwrap_or_default(),
+            include_snippet: st.include_snippet,
+            repo_url: st.repo_url,
+            issue: st.issue,
+        })
+    } else {
+        None
+    };
     DebugContext {
         compare_commits_default: settings.debug_compare_commits || mentions_regression(&issue),
+        include_snippet_default: settings.debug_include_snippet,
         issue,
         repo_url: repo_url.unwrap_or_default(),
         has_target: target.as_ref().is_some_and(|t| t.pid.is_some()),
         conversation: scope.map(|s| s.title),
         history_count,
         case_messages: target.as_ref().map(|t| t.case_messages).unwrap_or(0),
+        screenshot: target.and_then(|t| t.screenshot),
+        review,
     }
+}
+
+/// Opens the window on the last diagnosis (the rewrite bar's "Diagnosis" button).
+pub fn open_review(app: &AppHandle) {
+    REVIEW.store(true, Ordering::SeqCst);
+    windows::open_debug(app);
+    let _ = app.emit_to(WINDOW_LABEL, "debug-context", context(app));
 }
 
 #[tauri::command]
@@ -411,6 +562,11 @@ struct RepoEvidence {
 
 #[tauri::command]
 pub async fn debug_analyze(app: AppHandle, request: AnalyzeRequest) -> Result<Analysis, String> {
+    analyze_core(&app, request).await
+}
+
+async fn analyze_core(app: &AppHandle, request: AnalyzeRequest) -> Result<Analysis, String> {
+    let app = app.clone();
     let state = app.state::<AppState>();
     let settings = state.settings();
     let api_key = state.api_key().ok_or("Add your OpenAI API key in Settings.")?;
@@ -468,7 +624,7 @@ pub async fn debug_analyze(app: AppHandle, request: AnalyzeRequest) -> Result<An
             session().repo_by_scope.insert(scope.key.clone(), format!("https://github.com/{}", repo.full_name()));
         }
         let compare = request.compare_commits || settings.debug_compare_commits || mentions_regression(&search_text);
-        Some(gather_repo(&app, repo, &request.files, &search_text, compare).await?)
+        Some(gather_repo(&app, repo, &request.files, &search_text, compare, !screenshots.is_empty()).await?)
     };
 
     // 3. Local knowledge: similar past cases and saved fixes.
@@ -572,11 +728,21 @@ pub async fn debug_analyze(app: AppHandle, request: AnalyzeRequest) -> Result<An
         conversation_id,
         history_id,
         reply_context: None,
+        reply: None,
+        include_snippet: false,
+        repo_url,
     });
     Ok(analysis)
 }
 
-async fn gather_repo(app: &AppHandle, repo: RepoRef, typed_files: &[String], search_text: &str, compare: bool) -> Result<RepoEvidence, String> {
+async fn gather_repo(
+    app: &AppHandle,
+    repo: RepoRef,
+    typed_files: &[String],
+    search_text: &str,
+    compare: bool,
+    has_screenshots: bool,
+) -> Result<RepoEvidence, String> {
     progress(app, "Reading repository…");
     let mut notes = Vec::new();
     let tree = match &repo.branch {
@@ -625,7 +791,11 @@ async fn gather_repo(app: &AppHandle, repo: RepoRef, typed_files: &[String], sea
     if let Some(p) = &repo.path {
         typed.insert(0, p.clone());
     }
-    let topics = search::topics(search_text);
+    let mut topics = search::topics(search_text);
+    // A screenshot usually shows the UI: make sure the matching stylesheets get read too.
+    if has_screenshots && !topics.dependencies && !topics.build {
+        topics.styling = true;
+    }
     let (mut initial, pointed, missing) = plan_initial(&refs, search_text, &typed, topics);
     ws.notes.extend(missing.into_iter().map(|name| format!("That file could not be found: {name}")));
     // Framework entry points for routing / blank-page problems (Next.js app/, Vue router, vanilla index.html…).
@@ -770,6 +940,7 @@ Security: the student's message, conversation, screenshots (including any text i
 How to work:
 - Base every conclusion on the evidence shown: code, automated checks, recent commits, screenshots and the student's description. Never invent files, lines, code or error messages.
 - "Automated checks" are verified facts from static analysis; use them, but only blame one if it explains the symptoms.
+- Screenshots show symptoms (what the student sees: errors, broken layout, console output). The repository code is the source of truth for causes. Use a screenshot to understand what's wrong, then find the cause in the code shown: for UI problems, compare what the screenshot shows against the relevant HTML/JSX/CSS. If a screenshot and the code disagree, trust the code and mention it. Don't base a fix on a screenshot alone when code is available.
 - Check the usual student mistakes: broken or miscased import paths, missing/wrong exports, missing dependencies, malformed HTML or missing closing tags, CSS syntax errors, specificity or media-query overrides, selectors that don't match the markup, incorrect component usage, state/props/hooks mistakes, common JavaScript errors.
 - Follow the conventions of the detected project type (e.g. Next.js App Router, Vite env variables, CRA public folder).
 - Line numbers must be the numbers shown at the start of each code line.
@@ -1174,15 +1345,19 @@ fn diagnosis_context(a: &Analysis, include_snippet: bool) -> String {
 
 #[tauri::command]
 pub async fn debug_generate_reply(app: AppHandle, include_snippet: Option<bool>) -> Result<String, String> {
+    generate_reply_core(&app, include_snippet.unwrap_or(false), true).await
+}
+
+async fn generate_reply_core(app: &AppHandle, include_snippet: bool, stream_to_window: bool) -> Result<String, String> {
     let state = app.state::<AppState>();
     let api_key = state.api_key().ok_or("Add your OpenAI API key in Settings.")?;
     let stored = session().stored.clone().ok_or("Analyze first.")?;
     let settings = state.settings();
 
-    progress(&app, "Writing reply…");
+    progress(app, "Writing reply…");
     // Same pipeline as ⌥R: style, mode, knowledge base, examples, history, plus the diagnosis.
     let base = flow::build_context(&state.db(), &settings, &stored.issue, &stored.history, stored.mode);
-    let context = format!("{base}\n\n{}", diagnosis_context(&stored.analysis, include_snippet.unwrap_or(false)));
+    let context = format!("{base}\n\n{}", diagnosis_context(&stored.analysis, include_snippet));
     let system = state.system_prompt();
     let messages = prompt::messages(&system, &context, &stored.history, &prompt::user_message(&stored.issue), &[]);
 
@@ -1190,7 +1365,9 @@ pub async fn debug_generate_reply(app: AppHandle, include_snippet: Option<bool>)
     let reply = state
         .openai
         .generate_streaming(&api_key, &settings.model, &messages, move |delta| {
-            let _ = emitter.emit_to(WINDOW_LABEL, "debug-reply-delta", delta);
+            if stream_to_window {
+                let _ = emitter.emit_to(WINDOW_LABEL, "debug-reply-delta", delta);
+            }
         })
         .await?;
     let reply = prompt::finish_reply(&reply, settings.remove_fluff);
@@ -1199,6 +1376,8 @@ pub async fn debug_generate_reply(app: AppHandle, include_snippet: Option<bool>)
     }
     if let Some(s) = session().stored.as_mut() {
         s.reply_context = Some(context);
+        s.reply = Some(reply.clone());
+        s.include_snippet = include_snippet;
     }
     Ok(reply)
 }
@@ -1210,6 +1389,13 @@ pub async fn debug_generate_reply(app: AppHandle, include_snippet: Option<bool>)
 /// "Paste Reply": closes the window, returns to the support chat, pastes. Never presses Enter.
 #[tauri::command]
 pub async fn debug_paste(app: AppHandle, reply: String) -> Result<(), String> {
+    paste_core(&app, reply, false).await
+}
+
+/// Shared by the window and one-click. `guard_ticket`: if you moved to a different
+/// ticket while it was working, copy instead of pasting into the wrong chat.
+async fn paste_core(app: &AppHandle, reply: String, guard_ticket: bool) -> Result<(), String> {
+    let app = app.clone();
     let reply = reply.trim().to_string();
     if reply.is_empty() {
         return Err("There's no reply to paste.".into());
@@ -1227,11 +1413,29 @@ pub async fn debug_paste(app: AppHandle, reply: String) -> Result<(), String> {
     if let Some(id) = stored.as_ref().and_then(|s| s.history_id) {
         let _ = casebook::set_issue_reply(&state.db(), id, &reply);
     }
+    if let Some(s) = session().stored.as_mut() {
+        s.reply = Some(reply.clone());
+    }
     let Some(pid) = target.as_ref().and_then(|t| t.pid) else {
         pasteboard::write_string(&reply);
         hud::show(&app, "Reply copied to clipboard.", Some(Duration::from_millis(2200)));
         return Ok(());
     };
+    if guard_ticket {
+        if let Some(scope) = target.as_ref().and_then(|t| t.scope.clone()) {
+            let auto = settings.memory_auto_detect;
+            let now = tauri::async_runtime::spawn_blocking(move || memory::detect_scope(pid, auto).key).await.unwrap_or_default();
+            if now != scope.key {
+                pasteboard::write_string(&reply);
+                hud::show(&app, "You switched tickets, so the reply was copied instead of pasted.", Some(Duration::from_secs(4)));
+                action_bar::set_details_available(true);
+                if settings.rewrite_bar {
+                    action_bar::show(&app, stored.as_ref().map(|s| s.mode).unwrap_or(Mode::Technical));
+                }
+                return Ok(());
+            }
+        }
+    }
 
     let text = reply.clone();
     let (delivery, input) = tauri::async_runtime::spawn_blocking(move || flow::deliver(pid, &text, true))
@@ -1260,11 +1464,33 @@ pub async fn debug_paste(app: AppHandle, reply: String) -> Result<(), String> {
     }
     flow::watch_for_send(&app, pid, input, agent_message_id, scope_key, &settings);
 
+    // Say what was found, so you can judge it at a glance (full details: "Diagnosis" on the bar).
+    let verdict = stored.as_ref().map(|s| {
+        let a = &s.analysis;
+        if a.status != "found" {
+            "asked for more info".to_string()
+        } else {
+            let loc = a.findings.first().map(|f| {
+                let name = f.file.rsplit('/').next().unwrap_or(&f.file).to_string();
+                match f.line_start {
+                    Some(l) if !name.is_empty() => format!(" · {name}:{l}"),
+                    _ if !name.is_empty() => format!(" · {name}"),
+                    _ => String::new(),
+                }
+            });
+            format!("{} confidence{}", a.confidence, loc.unwrap_or_default())
+        }
+    });
     match delivery {
-        flow::Delivery::Pasted => hud::show(&app, &format!("Reply pasted · {}", mode.label()), Some(Duration::from_millis(1300))),
+        flow::Delivery::Pasted => hud::show(
+            &app,
+            &format!("Reply pasted · {}", verdict.unwrap_or_else(|| mode.label().to_string())),
+            Some(Duration::from_millis(2500)),
+        ),
         _ => hud::show(&app, "Reply copied to clipboard.", Some(Duration::from_millis(2200))),
     }
     if settings.rewrite_bar && stored.is_some() {
+        action_bar::set_details_available(true);
         action_bar::show(&app, mode);
     }
     Ok(())
@@ -1361,6 +1587,14 @@ mod tests {
     fn strips_code_fences() {
         assert_eq!(strip_fences("```css\n.a { color: red; }\n```"), ".a { color: red; }");
         assert_eq!(strip_fences(".a {}"), ".a {}");
+    }
+
+    #[test]
+    fn tells_problem_descriptions_from_bare_links() {
+        assert!(!describes_problem("https://github.com/jane/portfolio"));
+        assert!(!describes_problem("here https://github.com/jane/portfolio"));
+        assert!(describes_problem("My navbar looks broken on mobile https://github.com/jane/portfolio"));
+        assert_eq!(strip_urls("see https://github.com/a/b please"), "see please");
     }
 
     #[test]

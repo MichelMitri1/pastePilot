@@ -23,14 +23,15 @@ tokio = { version = "1", features = ["time"] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 tauri-plugin-updater = "2"
 cpal = "0.18"
+base64 = "0.22"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
 core-foundation = "0.10"
 core-graphics = "0.25"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSNotification", "NSOperation", "NSData", "NSArray", "NSGeometry", "NSAttributedString", "block2"] }
-objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication", "NSPasteboard", "NSPasteboardItem", "NSPanel", "NSWindow", "NSResponder", "NSView", "NSVisualEffectView", "NSTextField", "NSControl", "NSText", "NSColor", "NSFont", "NSScreen", "NSGraphics", "NSApplication", "NSCell", "NSButton", "NSButtonCell", "NSPopUpButton", "NSMenu", "NSMenuItem", "NSAppearance", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSNotification", "NSOperation", "NSData", "NSArray", "NSGeometry", "NSAttributedString", "NSValue", "NSDictionary", "block2"] }
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication", "NSPasteboard", "NSPasteboardItem", "NSPanel", "NSWindow", "NSResponder", "NSView", "NSVisualEffectView", "NSTextField", "NSControl", "NSText", "NSColor", "NSFont", "NSScreen", "NSGraphics", "NSApplication", "NSCell", "NSButton", "NSButtonCell", "NSPopUpButton", "NSMenu", "NSMenuItem", "NSAppearance", "NSBitmapImageRep", "NSImageRep", "block2"] }
 block2 = "0.6"
 
 [profile.release]

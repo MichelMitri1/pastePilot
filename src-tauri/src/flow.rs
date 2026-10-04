@@ -202,6 +202,7 @@ async fn generate(app: &AppHandle, how: Trigger) {
         Delivery::Copied => hud::show(app, &format!("Reply copied · {mode}"), Some(SHORT)),
     }
     if settings.rewrite_bar {
+        action_bar::set_details_available(false);
         action_bar::show(app, prepared.mode);
     }
 }

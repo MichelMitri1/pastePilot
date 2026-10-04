@@ -59,6 +59,10 @@ pub struct Settings {
     pub debug_model: String,
     /// Always compare recent commits (otherwise only when the student says something broke).
     pub debug_compare_commits: bool,
+    /// ⌥G with a repo link + problem in the selection: diagnose and paste without opening the window.
+    pub debug_one_click: bool,
+    /// Put the corrected code in one-click replies when there is one.
+    pub debug_include_snippet: bool,
 
     // Reply polish and learning
     /// Strip generic AI phrasing ("Certainly!", "It appears that") before pasting.
@@ -116,6 +120,8 @@ impl Default for Settings {
             debug_shortcut: DEFAULT_DEBUG_SHORTCUT.into(),
             debug_model: DEFAULT_MODEL.into(),
             debug_compare_commits: false,
+            debug_one_click: true,
+            debug_include_snippet: false,
             remove_fluff: true,
             feedback_learning: true,
             feedback_save_examples: true,

@@ -32,12 +32,24 @@ export default function DebugApp() {
 
   const applyContext = useCallback((c: DebugContext) => {
     setCtx(c);
+    setError(null);
+    setIncludeSnippet(c.includeSnippetDefault);
+    if (c.review) {
+      // Reviewing the last one-click diagnosis: show it as it was.
+      setIssue(c.review.issue);
+      setRepoUrl(c.review.repoUrl);
+      setAnalysis(c.review.analysis);
+      setReply(c.review.reply);
+      setIncludeSnippet(c.review.includeSnippet);
+      setPhase("ready");
+      return;
+    }
     if (c.issue) setIssue(c.issue);
     if (c.repoUrl) setRepoUrl((current) => current || c.repoUrl);
+    if (c.screenshot) setShots((s) => (s.includes(c.screenshot!) ? s : [c.screenshot!, ...s].slice(0, MAX_SCREENSHOTS)));
     setCompare(c.compareCommitsDefault);
     setAnalysis(null);
     setReply("");
-    setError(null);
     setPhase("idle");
   }, []);
 
@@ -194,7 +206,7 @@ export default function DebugApp() {
       </section>
 
       <section>
-        <label>Screenshots <span className="muted">(optional: paste with ⌘V, drop, or choose)</span></label>
+        <label>Screenshots <span className="muted">(optional: paste with ⌘V, drop, or choose · a screenshot you just copied is attached automatically)</span></label>
         <div className="shots">
           {shots.map((s, i) => (
             <div className="shot" key={i}>

@@ -42,6 +42,17 @@ export default function AI({ settings, update, status }: SectionProps) {
           <input type="checkbox" checked={settings.debugCompareCommits} onChange={(e) => update("debugCompareCommits", e.target.checked)} />
           <span>Always compare recent commits <span className="muted small">(otherwise only when the student says it broke after a change; uses 4 GitHub requests)</span></span>
         </label>
+        <label className="check">
+          <input type="checkbox" checked={settings.debugOneClick} onChange={(e) => update("debugOneClick", e.target.checked)} />
+          <span>
+            One-click debugging <span className="muted small">(when the selected message has a repo link and describes the problem,
+            ⌥G diagnoses and pastes the reply without opening the window; the menu bar item always opens it)</span>
+          </span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={settings.debugIncludeSnippet} onChange={(e) => update("debugIncludeSnippet", e.target.checked)} />
+          <span>Include the corrected code in replies when there is one</span>
+        </label>
       </section>
 
       <h3>Mode instructions</h3>

@@ -37,6 +37,8 @@ export interface Settings {
   debugShortcut: string;
   debugModel: string;
   debugCompareCommits: boolean;
+  debugOneClick: boolean;
+  debugIncludeSnippet: boolean;
   removeFluff: boolean;
   feedbackLearning: boolean;
   feedbackSaveExamples: boolean;
@@ -125,6 +127,11 @@ export interface DebugContext {
   historyCount: number;
   caseMessages: number;
   compareCommitsDefault: boolean;
+  includeSnippetDefault: boolean;
+  /** A screenshot you copied in the last few minutes, pre-attached. */
+  screenshot: string | null;
+  /** Set when opened from the rewrite bar's "Diagnosis" button. */
+  review: { analysis: Analysis; reply: string; includeSnippet: boolean; repoUrl: string; issue: string } | null;
 }
 
 export interface Snippet {

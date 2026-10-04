@@ -19,6 +19,26 @@ const MAX_ITEM_CHARS: usize = 20_000;
 /// Clipboard changes PastePilot makes itself (pastes, Cmd+C capture) are not "copies".
 static OWN_CHANGE: AtomicIsize = AtomicIsize::new(-1);
 static SUPPRESS_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+/// changeCount the watcher last looked at, and the last change that was an image (+ when).
+static LAST_SEEN: AtomicIsize = AtomicIsize::new(-1);
+static IMAGE_CHANGE: AtomicIsize = AtomicIsize::new(-2);
+static IMAGE_AT_MS: AtomicU64 = AtomicU64::new(0);
+
+/// The clipboard image, if you copied it in the last `max_age` (an old screenshot is never picked up).
+pub fn recent_image(max_age: Duration) -> Option<String> {
+    let count = pasteboard::change_count();
+    let fresh = if count == IMAGE_CHANGE.load(Ordering::SeqCst) {
+        now_ms().saturating_sub(IMAGE_AT_MS.load(Ordering::SeqCst)) <= max_age.as_millis() as u64
+    } else {
+        // Copied within the last second, before the watcher noticed.
+        count != LAST_SEEN.load(Ordering::SeqCst) && count != OWN_CHANGE.load(Ordering::SeqCst)
+    };
+    if fresh && pasteboard::has_image() {
+        pasteboard::image_data_url()
+    } else {
+        None
+    }
+}
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
@@ -113,6 +133,12 @@ pub fn start_watcher(app: &AppHandle) {
                 continue;
             }
             last = count;
+            LAST_SEEN.store(count, Ordering::SeqCst);
+            // Remember when an image was copied (no content is stored), for GitHub Debug screenshots.
+            if count != OWN_CHANGE.load(Ordering::SeqCst) && pasteboard::has_image() {
+                IMAGE_CHANGE.store(count, Ordering::SeqCst);
+                IMAGE_AT_MS.store(now_ms(), Ordering::SeqCst);
+            }
             let settings = app.state::<AppState>().settings();
             if !settings.clipboard_history || !settings.clipboard_watch {
                 continue;

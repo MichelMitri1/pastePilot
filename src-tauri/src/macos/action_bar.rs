@@ -33,6 +33,14 @@ const AUTO_HIDE: Duration = Duration::from_secs(30);
 
 const TAG_SAVE: isize = 6;
 const TAG_CLOSE: isize = 7;
+const TAG_DETAILS: isize = 8;
+
+/// Shows the "Diagnosis" button (replies that came from GitHub Debug).
+static DETAILS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_details_available(on: bool) {
+    DETAILS.store(on, Ordering::SeqCst);
+}
 
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -106,7 +114,8 @@ pub fn show(app: &AppHandle, mode: Mode) {
     let _ = APP.set(app.clone());
     let shortcuts_on = app.state::<AppState>().settings().rewrite_shortcuts;
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-    let _ = app.run_on_main_thread(move || present(mode, shortcuts_on));
+    let details = DETAILS.load(Ordering::SeqCst);
+    let _ = app.run_on_main_thread(move || present(mode, shortcuts_on, details));
     shortcut::set_rewrite_keys(app, shortcuts_on);
 
     let app = app.clone();
@@ -135,6 +144,7 @@ fn on_button(tag: isize) {
     match tag {
         1..=5 => flow::trigger_followup(app.clone(), Followup::Rewrite(RewriteAction::ALL[(tag - 1) as usize])),
         TAG_SAVE => flow::save_last_as_example(app),
+        TAG_DETAILS => crate::debug::open_review(app),
         TAG_CLOSE => hide(app),
         _ => {}
     }
@@ -149,7 +159,7 @@ fn on_mode(index: isize) {
     }
 }
 
-fn present(mode: Mode, shortcuts_on: bool) {
+fn present(mode: Mode, shortcuts_on: bool, details: bool) {
     let Some(mtm) = MainThreadMarker::new() else { return };
     BAR.with(|cell| {
         let mut slot = cell.borrow_mut();
@@ -158,6 +168,9 @@ fn present(mode: Mode, shortcuts_on: bool) {
         bar.popup.selectItemAtIndex(mode.index() as isize);
 
         for (tag, button) in &bar.buttons {
+            if *tag == TAG_DETAILS {
+                button.setHidden(!details);
+            }
             if (1..=5).contains(tag) {
                 let action = RewriteAction::ALL[(*tag - 1) as usize];
                 let title = if shortcuts_on {
@@ -205,6 +218,9 @@ fn layout(bar: &Bar) -> f64 {
     bar.popup.setFrameOrigin(NSPoint::new(x, ((HEIGHT - size.height) / 2.0).round()));
     x += size.width + GAP * 2.0;
     for (_, button) in &bar.buttons {
+        if button.isHidden() {
+            continue;
+        }
         button.sizeToFit();
         let size = button.frame().size;
         button.setFrameOrigin(NSPoint::new(x, ((HEIGHT - size.height) / 2.0).round()));
@@ -281,6 +297,7 @@ fn build(mtm: MainThreadMarker) -> Bar {
         .enumerate()
         .map(|(i, a)| (i as isize + 1, short_label(*a).to_string(), format!("{} ({})", a.label(), shortcut_hint(*a))))
         .chain([
+            (TAG_DETAILS, "Diagnosis".to_string(), "See what GitHub Debug found: files, lines, diff".to_string()),
             (TAG_SAVE, "★ Save".to_string(), "Save this reply as a style example".to_string()),
             (TAG_CLOSE, "✕".to_string(), "Hide".to_string()),
         ])
