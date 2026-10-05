@@ -43,7 +43,6 @@ export interface Settings {
   removeFluff: boolean;
   feedbackLearning: boolean;
   feedbackSaveExamples: boolean;
-  caseShortcut: string;
   clipboardHistory: boolean;
   clipboardWatch: boolean;
   clipboardMaxItems: number;

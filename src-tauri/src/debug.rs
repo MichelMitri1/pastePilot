@@ -15,9 +15,9 @@
 //!   → optional recent-commit comparison
 //!   → similar past issues + matching saved fixes (local)
 //!   → AI analysis (JSON) that may ask for up to 4 more files, at most twice
-//!   → diagnosis with real code (before) and a proposed fix (after)
+//!   → diagnosis with a complete replaceable code block (before) and its fix (after)
 //!   → low confidence ⇒ ask the student for exactly what's missing
-//!   → reply in your usual style (same pipeline as ⌥R), snippet optional
+//!   → reply in your usual style (same pipeline as ⌥R), replacement block optional
 //!   → Paste Reply (same paste as ⌥R; never presses Enter)
 //!
 //! One-click: when the selected message (or this conversation) has a GitHub
@@ -56,7 +56,9 @@ const MAX_TOTAL_CHARS: usize = 70_000;
 const MAX_EXTRA_ROUNDS: usize = 2;
 const MAX_REQUESTED_PER_ROUND: usize = 4;
 const TREE_LISTING_MAX: usize = 400;
-const ANALYSIS_MAX_TOKENS: u32 = 2200;
+const ANALYSIS_MAX_TOKENS: u32 = 3500;
+/// A replacement should be a useful enclosing block, but never an entire large file.
+const MAX_REPLACEMENT_LINES: u32 = 120;
 const MAX_SCREENSHOTS: usize = 3;
 const MAX_SCREENSHOT_BYTES: usize = 6_000_000;
 const COMMITS_TO_COMPARE: usize = 3;
@@ -835,7 +837,9 @@ How to work:
 - If you need other files from the file list to be confident, answer with status "need_files" and up to 4 exact paths in "request_files" (only when more files are allowed).
 - Confidence: "high" only when the evidence clearly produces the described problem; "medium" when likely but unverified; "low" when it's a guess.
 - If the evidence isn't enough to diagnose the problem, use status "uncertain" and put exactly what the agent should ask the student for in "missing_info" (for example: the full error message from the browser console, which page, a screenshot, the URL of the deployed site). Never invent a fix to fill the gap.
-- For each finding, "after" is the corrected code that replaces lines line_start..line_end exactly (same indentation, only those lines). Leave "after" empty if a code change isn't the fix.
+- When a code change is the fix, return a complete block the student can replace, not an isolated changed line. Use the smallest self-contained enclosing block that includes the problem: the whole HTML/JSX element (for example the full <div>...</div> section), CSS rule, function, component, conditional, or similarly replaceable unit.
+- Set line_start and line_end to that complete block. "after" must be the full corrected replacement for exactly those lines, with the original indentation and all unchanged content inside the block preserved. Never use ellipses, placeholders, or omit siblings/content from inside it.
+- Keep the replacement focused and at most 120 lines. Do not return the whole file or a large parent component when a smaller complete block can be safely replaced. Leave "after" empty if there is no bounded code replacement.
 - If a saved fix clearly applies, list its id in "used_fix_ids". If this is the same problem as a past case, mention it in the summary.
 
 Respond with a JSON object only:
@@ -845,7 +849,7 @@ Respond with a JSON object only:
   "confidence": "high" | "medium" | "low",
   "summary": "one or two plain sentences for the agent",
   "findings": [
-    { "file": "exact/path", "line_start": 42, "line_end": 44, "cause": "what is wrong, plainly", "fix": "exactly what to change", "after": "corrected code for those lines" }
+    { "file": "exact/path", "line_start": 42, "line_end": 58, "cause": "what is wrong, plainly", "fix": "exactly what to change", "after": "complete corrected replacement block for all of those lines" }
   ],
   "missing_info": "what to ask the student if uncertain, else empty",
   "used_fix_ids": [12]
@@ -963,6 +967,13 @@ fn retrieval_trim(s: &str, n: usize) -> String {
     crate::retrieval::truncate(s, n)
 }
 
+fn corrected_replacement(raw: &Value, before: Option<&str>) -> Option<String> {
+    raw.as_str()
+        .map(strip_fences)
+        .filter(|code| !code.trim().is_empty() && code.lines().count() <= MAX_REPLACEMENT_LINES as usize)
+        .filter(|code| before.is_none_or(|original| original.split_whitespace().ne(code.split_whitespace())))
+}
+
 fn build_analysis(
     evidence: Option<&RepoEvidence>,
     v: &Value,
@@ -1009,7 +1020,7 @@ fn build_analysis(
                     let snippet = content.and_then(|c| {
                         let total = c.lines().count() as u32;
                         let s = start.filter(|s| *s <= total)?;
-                        let e = end.unwrap_or(s).clamp(s, total.min(s + 30));
+                        let e = end.unwrap_or(s).clamp(s, total.min(s + MAX_REPLACEMENT_LINES - 1));
                         start = Some(s);
                         end = Some(e);
                         before = Some(
@@ -1022,11 +1033,7 @@ fn build_analysis(
                         start = None;
                         end = None;
                     }
-                    let after = f["after"]
-                        .as_str()
-                        .map(strip_fences)
-                        .filter(|a| !a.trim().is_empty() && a.lines().count() <= 40)
-                        .filter(|a| before.as_deref().is_none_or(|b| b.split_whitespace().ne(a.split_whitespace())));
+                    let after = corrected_replacement(&f["after"], before.as_deref());
                     let display = file.clone().unwrap_or_else(|| raw_file.to_string());
                     Some(Finding {
                         url: file.as_ref().and_then(|p| evidence.map(|e| github::blob_url(&e.ws.repo, &e.ws.tree.git_ref, p, start.zip(end)))),
@@ -1424,6 +1431,16 @@ mod tests {
     fn strips_code_fences() {
         assert_eq!(strip_fences("```css\n.a { color: red; }\n```"), ".a { color: red; }");
         assert_eq!(strip_fences(".a {}"), ".a {}");
+    }
+
+    #[test]
+    fn accepts_complete_replacement_blocks_but_caps_large_ones() {
+        let complete_section = (1..=80).map(|i| format!("<p>Line {i}</p>")).collect::<Vec<_>>().join("\n");
+        assert_eq!(corrected_replacement(&json!(complete_section), Some("old section")), Some(complete_section));
+
+        let whole_file = (1..=MAX_REPLACEMENT_LINES + 1).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        assert_eq!(corrected_replacement(&json!(whole_file), Some("old section")), None);
+        assert_eq!(corrected_replacement(&json!("same code"), Some("same   code")), None);
     }
 
     #[test]

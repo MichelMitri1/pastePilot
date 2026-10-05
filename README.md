@@ -62,7 +62,7 @@ Use it for small bugs in a student's **public** GitHub repo, without cloning any
 2. Paste or confirm the repository URL. You can optionally add file names you suspect, like `Navbar.jsx` or `src/styles.css`.
 3. Click **Analyze Repository** or press ⌘↩. PastePilot reads only the relevant files and shows:
    - the likely cause and the suggested fix
-   - the file and line, with a short snippet taken from the real file
+   - the file and lines, with the complete affected section taken from the real file and a corrected replacement block
    - a **High**, **Medium** or **Low** confidence rating
 4. It then writes the reply in your normal style, using your writing style, mode, knowledge base, examples and conversation memory. You can edit it.
 5. Click **Paste Reply** or press ⌘⇧↩. The window closes, and the reply is pasted into your support chat without being sent. The rewrite bar and send detection work as usual.
@@ -93,7 +93,7 @@ Use it for small bugs in a student's **public** GitHub repo, without cloning any
 - **Private repos.** The client already accepts a token, but this version doesn't expose it, so private repositories show "Repository not found".
 
 ### Assignment Review (separate from GitHub Debug)
-Reviews a **whole submission** against the official example. Open it from the menu bar with **Assignment Review…** or press **⌥⇧A**. If a student message was selected, PastePilot fills in their live site and repo links.
+Reviews a **whole submission** against the official example. Open it from the menu bar with **Assignment Review…** or press **⌥A**. If a student message was selected, PastePilot fills in their live site and repo links.
 
 1. **Enter three things:** the **example website**, the **student's live website** and the **student's GitHub repo**. Optionally add **requirements** (one per line), notes and screenshots. Save an assignment as a **preset** so the example URL and requirements are one click next time.
 2. **Click Review Assignment.** PastePilot:
@@ -149,13 +149,13 @@ PastePilot detects the repo URL and the issue, picks the relevant files, diagnos
   - unbalanced CSS braces
   - invalid `package.json`
 - **Commit comparison.** It reads the 3 most recent commits with their diffs for the files involved. This turns on by itself when the student says it "was working" or "broke after", and can always be on.
-- **Before/after diff and snippets.** Each finding shows the real lines from the file next to the proposed fix. You can copy the fix or **include the snippet in the reply** with one checkbox.
+- **Complete before/after replacements.** Each finding shows the smallest complete affected block—such as a full HTML/JSX element, CSS rule or function—next to the corrected version. You can copy the whole replacement or **include it in the reply** with one checkbox.
 - **Ask-for-missing-info.** Low confidence is never presented as an answer. The reply asks for exactly what's missing, such as the console error, which page, or a screenshot, and the guessed cause stays out of the reply.
 - **Issue history.** Every diagnosis is stored by repo and conversation. Similar past cases show as "Seen before" and are given to the analysis.
 - **Fix library.** Searchable, reusable fixes, with add, edit, import, and **Save as fix** from any diagnosis. Relevant ones are offered to the analysis, and the ones it used are marked ✓.
 
 ### Workflow extras
-- **Multi-message cases.** Select a message, press **⌥A**, and repeat. The next ⌥R or ⌥G treats all of them as one case. You can also pick messages in Clipboard History and click **Add to case**. A case never carries over to a different ticket.
+- **Multi-message cases.** Select a message, choose **Add Selection to Case** from the menu bar, and repeat. The next ⌥R or ⌥G treats all of them as one case. You can also pick messages in Clipboard History and click **Add to case**. A case never carries over to a different ticket.
 - **Clipboard history.** Student messages and replies are kept locally, capped by count and age. Recording what you copy yourself is **off by default**, and copies marked as passwords by password managers are never recorded. There's a clear-history button.
 - **AI fluff removal.** Phrases like "Certainly!", "It appears that…", "I hope this helps!" and "In order to" are stripped or simplified before pasting. It can be turned off under Writing Style.
 - **Feedback learning.** When the reply you send differs a lot from the draft, PastePilot learns concrete rules, like "make replies ~30% shorter" or "avoid 'feel free to'". These are added to your style prompt, and heavily rewritten replies can become reply examples. You can see and reset what it learned under Writing Style.

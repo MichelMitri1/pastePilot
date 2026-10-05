@@ -25,13 +25,6 @@ export default function Shortcuts({ settings, update }: SectionProps) {
           </div>
         </div>
         <div className="field">
-          <label>Add selection to case</label>
-          <div className="row">
-            <ShortcutInput value={settings.caseShortcut} onChange={(v) => update("caseShortcut", v)} />
-            <button className="link" onClick={() => update("caseShortcut", "")}>None</button>
-          </div>
-        </div>
-        <div className="field">
           <label>Voice command (hold to talk)</label>
           <div className="row">
             <ShortcutInput value={settings.voiceShortcut} onChange={(v) => update("voiceShortcut", v)} />
@@ -57,8 +50,8 @@ export default function Shortcuts({ settings, update }: SectionProps) {
       <section className="card">
         <label>Multi-message cases</label>
         <span className="muted small">
-          Select a student message and press {prettyShortcut(settings.caseShortcut)} to add it to the case; repeat for each
-          message. The next ⌥R or ⌥G answers them as one case. Cases never carry over to a different ticket.
+          Select a student message and choose Add Selection to Case from the menu bar; repeat for each message. The next ⌥R
+          or ⌥G answers them as one case. Cases never carry over to a different ticket.
         </span>
       </section>
 

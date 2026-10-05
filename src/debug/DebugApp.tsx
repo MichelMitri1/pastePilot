@@ -278,7 +278,7 @@ export default function DebugApp() {
                     writeReply(e.target.checked);
                   }}
                 />
-                <span>Include code snippet</span>
+                <span>Include complete corrected section</span>
               </label>
             )}
           </div>
@@ -426,7 +426,7 @@ function FindingView({ finding: f, tentative, repoKnown, projectLabel, issueType
               <button className={view === "code" ? "on" : ""} onClick={() => setView("code")}>Code</button>
             </div>
           )}
-          {f.after && <button onClick={() => onCopy(f.after!)}>Copy fix</button>}
+          {f.after && <button onClick={() => onCopy(f.after!)}>Copy replacement</button>}
           {!tentative && <button disabled={saved} onClick={saveFix}>{saved ? "Saved" : "Save as fix"}</button>}
         </div>
       </div>

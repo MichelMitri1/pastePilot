@@ -51,7 +51,7 @@ export default function AI({ settings, update, status }: SectionProps) {
         </label>
         <label className="check">
           <input type="checkbox" checked={settings.debugIncludeSnippet} onChange={(e) => update("debugIncludeSnippet", e.target.checked)} />
-          <span>Include the corrected code in replies when there is one</span>
+          <span>Include the complete corrected code section in replies when there is one</span>
         </label>
       </section>
 

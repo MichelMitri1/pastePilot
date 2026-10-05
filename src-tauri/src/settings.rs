@@ -11,9 +11,9 @@ pub const DEFAULT_MODEL: &str = "gpt-4.1-mini";
 pub const DEFAULT_SHORTCUT: &str = "Alt+R";
 pub const DEFAULT_NEW_CONVERSATION_SHORTCUT: &str = "Alt+Shift+R";
 pub const DEFAULT_DEBUG_SHORTCUT: &str = "Alt+G";
-pub const DEFAULT_CASE_SHORTCUT: &str = "Alt+A";
 pub const DEFAULT_VOICE_SHORTCUT: &str = "Alt+V";
-pub const DEFAULT_REVIEW_SHORTCUT: &str = "Alt+Shift+A";
+pub const DEFAULT_REVIEW_SHORTCUT: &str = "Alt+A";
+const LEGACY_REVIEW_SHORTCUT: &str = "Alt+Shift+A";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
@@ -77,10 +77,6 @@ pub struct Settings {
     /// Opens Assignment Review. Empty = none.
     pub review_shortcut: String,
 
-    // Multi-message cases
-    /// Adds the current selection to the case. Empty = none.
-    pub case_shortcut: String,
-
     // Clipboard history
     pub clipboard_history: bool,
     /// Also record text you copy yourself (off by default; password-manager copies are always skipped).
@@ -130,7 +126,6 @@ impl Default for Settings {
             remove_fluff: true,
             feedback_learning: true,
             feedback_save_examples: true,
-            case_shortcut: DEFAULT_CASE_SHORTCUT.into(),
             review_shortcut: DEFAULT_REVIEW_SHORTCUT.into(),
             clipboard_history: true,
             clipboard_watch: false,
@@ -145,10 +140,17 @@ impl Default for Settings {
 }
 
 pub fn load(path: &Path) -> Settings {
-    std::fs::read(path)
+    let mut settings: Settings = std::fs::read(path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    // Move existing installations from the former default to the replacement.
+    if settings.review_shortcut == LEGACY_REVIEW_SHORTCUT {
+        settings.review_shortcut = DEFAULT_REVIEW_SHORTCUT.into();
+    }
+
+    settings
 }
 
 pub fn save(path: &Path, settings: &Settings) -> std::io::Result<()> {

@@ -2,6 +2,7 @@
 //!
 //! - Generate reply: default ⌥R ("Alt+R").
 //! - New conversation + generate: default ⌥⇧R ("Alt+Shift+R"), optional.
+//! - Assignment Review: default ⌥A ("Alt+A"), optional.
 //! - Rewrite keys ⌥1–⌥5: registered only while the rewrite bar is visible, so
 //!   they don't steal those keys from other apps the rest of the time.
 
@@ -42,7 +43,11 @@ pub fn register_all(app: &AppHandle, settings: &Settings) -> Result<(), String> 
 /// Hotkeys besides "generate". Voice is only registered while voice commands are on,
 /// so ⌥V keeps working normally otherwise.
 fn optional_shortcuts(s: &Settings) -> Vec<&str> {
-    let mut v = vec![s.new_conversation_shortcut.trim(), s.debug_shortcut.trim(), s.case_shortcut.trim(), s.review_shortcut.trim()];
+    let mut v = vec![
+        s.new_conversation_shortcut.trim(),
+        s.debug_shortcut.trim(),
+        s.review_shortcut.trim(),
+    ];
     if s.voice_enabled {
         v.push(s.voice_shortcut.trim());
     }
@@ -56,7 +61,6 @@ pub fn apply(app: &AppHandle, old: &Settings, new: &Settings) -> Result<(), Stri
         new.shortcut.trim(),
         new.new_conversation_shortcut.trim(),
         new.debug_shortcut.trim(),
-        new.case_shortcut.trim(),
         new.voice_shortcut.trim(),
         new.review_shortcut.trim(),
     ];
@@ -113,11 +117,6 @@ pub fn dispatch(app: &AppHandle, pressed: &Shortcut, key_state: ShortcutState) {
         crate::review::open(app.clone(), false);
         return;
     }
-    if matches(&settings.case_shortcut) {
-        crate::case::add_selection(app.clone(), false);
-        return;
-    }
-
     if matches(&settings.shortcut) {
         flow::trigger(app.clone(), Trigger::Hotkey);
     } else if !settings.new_conversation_shortcut.trim().is_empty() && matches(settings.new_conversation_shortcut.trim()) {
