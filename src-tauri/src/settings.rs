@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 pub const DEFAULT_MODEL: &str = "gpt-4.1-mini";
+pub const DEFAULT_DEBUG_MODEL: &str = "gpt-5-mini";
 pub const DEFAULT_SHORTCUT: &str = "Alt+R";
 pub const DEFAULT_NEW_CONVERSATION_SHORTCUT: &str = "Alt+Shift+R";
 pub const DEFAULT_DEBUG_SHORTCUT: &str = "Alt+G";
@@ -56,8 +57,11 @@ pub struct Settings {
     // GitHub Debug Mode
     /// Opens GitHub Debug Mode. Empty = none.
     pub debug_shortcut: String,
-    /// Model for code analysis (empty = same as `model`).
+    /// Model for GitHub analysis (empty = DEFAULT_DEBUG_MODEL).
     pub debug_model: String,
+    pub debug_reasoning: DebugReasoning,
+    /// Assignment Review previously shared debug_model; keep its choice independent.
+    pub review_model: String,
     /// Always compare recent commits (otherwise only when the student says something broke).
     pub debug_compare_commits: bool,
     /// ⌥G with a repo link + problem in the selection: diagnose and paste without opening the window.
@@ -121,7 +125,9 @@ impl Default for Settings {
             rewrite_shortcuts: true,
             new_conversation_shortcut: DEFAULT_NEW_CONVERSATION_SHORTCUT.into(),
             debug_shortcut: DEFAULT_DEBUG_SHORTCUT.into(),
-            debug_model: DEFAULT_MODEL.into(),
+            debug_model: DEFAULT_DEBUG_MODEL.into(),
+            debug_reasoning: DebugReasoning::Medium,
+            review_model: DEFAULT_MODEL.into(),
             debug_compare_commits: false,
             debug_one_click: true,
             debug_include_snippet: false,
@@ -143,10 +149,44 @@ impl Default for Settings {
 }
 
 pub fn load(path: &Path) -> Settings {
-    let mut settings: Settings = std::fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    std::fs::read(path).ok().map(|bytes| decode(&bytes)).unwrap_or_default()
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum DebugReasoning {
+    Low,
+    Medium,
+    High,
+}
+
+impl DebugReasoning {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
+fn decode(bytes: &[u8]) -> Settings {
+    let raw = serde_json::from_slice::<serde_json::Value>(bytes).ok();
+    let mut settings: Settings = raw.clone()
+        .and_then(|value| serde_json::from_value(value).ok())
         .unwrap_or_default();
+    if let Some(raw) = raw {
+        if raw.get("reviewModel").is_none() {
+            // Preserve the old shared model before migrating GitHub Debug.
+            settings.review_model = raw.get("debugModel").and_then(|v| v.as_str())
+                .unwrap_or(DEFAULT_MODEL).to_owned();
+        }
+        if raw.get("debugReasoning").is_none()
+            && (settings.debug_model.trim().is_empty() || settings.debug_model == DEFAULT_MODEL)
+        {
+            settings.debug_model = DEFAULT_DEBUG_MODEL.into();
+        }
+    }
 
     // Move existing installations from the former default to the replacement.
     if settings.review_shortcut == LEGACY_REVIEW_SHORTCUT {
@@ -165,4 +205,33 @@ pub fn save(path: &Path, settings: &Settings) -> std::io::Result<()> {
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, json)?;
     std::fs::rename(tmp, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrates_debug_without_changing_reply_or_review_models() {
+        let settings = decode(br#"{"model":"gpt-4o-mini","debugModel":"gpt-4.1-mini"}"#);
+        assert_eq!(settings.model, "gpt-4o-mini");
+        assert_eq!(settings.debug_model, DEFAULT_DEBUG_MODEL);
+        assert_eq!(settings.debug_reasoning, DebugReasoning::Medium);
+        assert_eq!(settings.review_model, "gpt-4.1-mini");
+        assert_eq!(decode(&serde_json::to_vec(&settings).unwrap()), settings);
+    }
+
+    #[test]
+    fn preserves_custom_models_and_post_migration_choices() {
+        let custom = decode(br#"{"debugModel":"o4-mini"}"#);
+        assert_eq!(custom.debug_model, "o4-mini");
+        assert_eq!(custom.review_model, "o4-mini");
+        let chosen = decode(br#"{"debugModel":"gpt-4.1-mini","debugReasoning":"low"}"#);
+        assert_eq!(chosen.debug_model, "gpt-4.1-mini");
+        assert_eq!(chosen.debug_reasoning, DebugReasoning::Low);
+        let blank = decode(br#"{"model":"gpt-4o-mini","debugModel":""}"#);
+        assert_eq!(blank.debug_model, DEFAULT_DEBUG_MODEL);
+        assert_eq!(blank.review_model, ""); // retains the former main-model fallback
+        assert_eq!(decode(b"{}"), Settings::default());
+    }
 }

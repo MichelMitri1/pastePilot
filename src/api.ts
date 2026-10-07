@@ -36,6 +36,8 @@ export interface Settings {
   newConversationShortcut: string;
   debugShortcut: string;
   debugModel: string;
+  debugReasoning: "low" | "medium" | "high";
+  reviewModel: string;
   debugCompareCommits: boolean;
   debugOneClick: boolean;
   reviewShortcut: string;

@@ -418,7 +418,7 @@ pub async fn review_run(app: AppHandle, request: ReviewRequest) -> Result<Review
 
     // 2. Compare.
     progress(&app, "Comparing the student's site with the example…");
-    let model = if settings.debug_model.trim().is_empty() { settings.model.clone() } else { settings.debug_model.clone() };
+    let model = if settings.review_model.trim().is_empty() { settings.model.clone() } else { settings.review_model.clone() };
     let listing = repo_ws.as_ref().map(|(_, c)| search::tree_listing(&c.iter().collect::<Vec<_>>(), TREE_LISTING_MAX));
     let messages = compare_messages(&example, &student, &requirements, request.notes.trim(), &user_shots, listing.as_deref(), project.as_ref());
     let compared = state.openai.complete_json(&api_key, &model, &messages, 3000).await?;

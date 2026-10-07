@@ -56,7 +56,8 @@ const MAX_TOTAL_CHARS: usize = 70_000;
 const MAX_EXTRA_ROUNDS: usize = 2;
 const MAX_REQUESTED_PER_ROUND: usize = 4;
 const TREE_LISTING_MAX: usize = 400;
-const ANALYSIS_MAX_TOKENS: u32 = 3500;
+// Includes hidden reasoning and the JSON diagnosis. Retrieval stays capped at three calls.
+const ANALYSIS_MAX_TOKENS: u32 = 12_000;
 /// A replacement should be a useful enclosing block, but never an entire large file.
 const MAX_REPLACEMENT_LINES: u32 = 120;
 const MAX_SCREENSHOTS: usize = 3;
@@ -590,7 +591,7 @@ async fn analyze_core(app: &AppHandle, request: AnalyzeRequest) -> Result<Analys
     };
 
     // 4. AI analysis, with a bounded number of "I need more files" rounds.
-    let model = if settings.debug_model.trim().is_empty() { settings.model.clone() } else { settings.debug_model.clone() };
+    let model = if settings.debug_model.trim().is_empty() { crate::settings::DEFAULT_DEBUG_MODEL } else { settings.debug_model.trim() };
     let mut evidence = evidence;
     let mut round = 0;
     let parsed = loop {
@@ -604,7 +605,7 @@ async fn analyze_core(app: &AppHandle, request: AnalyzeRequest) -> Result<Analys
         };
         progress(&app, &format!("Analyzing {what}…"));
         let messages = analysis_messages(&issue_text, &history, evidence.as_ref(), &similar, &fixes, &screenshots, final_round);
-        let v = state.openai.complete_json(&api_key, &model, &messages, ANALYSIS_MAX_TOKENS).await?;
+        let v = state.openai.complete_json_reasoning(&api_key, model, &messages, ANALYSIS_MAX_TOKENS, settings.debug_reasoning.as_str()).await?;
         if v["status"].as_str() == Some("need_files") && !final_round {
             let Some(e) = evidence.as_mut() else { break v };
             let refs: Vec<&TreeEntry> = e.candidates.iter().collect();

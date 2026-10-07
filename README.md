@@ -69,6 +69,8 @@ Use it for small bugs in a student's **public** GitHub repo, without cloning any
 4. It then writes the reply in your normal style, using your writing style, mode, knowledge base, examples and conversation memory. You can edit it.
 5. Click **Paste Reply** or press ⌘⇧↩. The window closes, and the reply is pasted into your support chat without being sent. The rewrite bar and send detection work as usual.
 
+GitHub Debug defaults to **gpt-5-mini with medium reasoning**, independently of the reply model. Change its model and thinking effort in Settings → AI. Blank uses `gpt-5-mini`. Each call is capped at 12,000 tokens including reasoning and the JSON answer, with at most three calls per analysis. Budget exhaustion reports an error rather than accepting an incomplete diagnosis. Higher effort may take longer and cost more. Existing default installations migrate automatically; custom models are preserved. Assignment Review keeps its previous model in a separate setting.
+
 **How files are chosen:**
 1. **Names you typed** are resolved, so "navbar" finds `src/components/Navbar.jsx`.
 2. **Filename search** matches the issue text. "About component" finds `About.jsx`, `About/index.tsx` and `components/About.jsx`.

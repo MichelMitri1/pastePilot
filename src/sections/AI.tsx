@@ -34,10 +34,20 @@ export default function AI({ settings, update, status }: SectionProps) {
 
       <section className="field">
         <label>GitHub Debug model</label>
-        <input list="models" value={settings.debugModel} onChange={(e) => update("debugModel", e.target.value)} />
+        <input list="models" placeholder="gpt-5-mini" value={settings.debugModel} onChange={(e) => update("debugModel", e.target.value)} />
         <span className="muted small">
-          Used to read code in GitHub Debug Mode. gpt-4.1-mini is fast; gpt-4.1 is slower but catches subtler bugs.
+          Defaults to gpt-5-mini, an affordable reasoning model for code analysis. Blank uses this default.
           Replies always use the main model and your writing style.
+        </span>
+        <label htmlFor="debug-reasoning">GitHub Debug thinking effort</label>
+        <select id="debug-reasoning" value={settings.debugReasoning} onChange={(e) => update("debugReasoning", e.target.value as Settings["debugReasoning"])}>
+          <option value="low">Low — faster, lower cost</option>
+          <option value="medium">Medium — balanced (recommended)</option>
+          <option value="high">High — more thinking, slower</option>
+        </select>
+        <span className="muted small">
+          Applies to reasoning models. Each analysis call allows up to 12,000 tokens for thinking and the answer,
+          with at most three calls. Higher effort can use more of that budget. Non-reasoning models ignore this setting.
         </span>
         <label className="check">
           <input type="checkbox" checked={settings.debugCompareCommits} onChange={(e) => update("debugCompareCommits", e.target.checked)} />
@@ -66,6 +76,12 @@ export default function AI({ settings, update, status }: SectionProps) {
           One-click stops before pasting and shows the fix next to the student's real code. {CMD}{SHIFT}{ENTER} pastes it.
           Replies that only ask the student for more info always paste straight away.
         </span>
+      </section>
+
+      <section className="field">
+        <label>Assignment Review model</label>
+        <input list="models" value={settings.reviewModel} onChange={(e) => update("reviewModel", e.target.value)} />
+        <span className="muted small">Independent of GitHub Debug. Blank uses the main model.</span>
       </section>
 
       <h3>Mode instructions</h3>

@@ -59,12 +59,22 @@ impl OpenAi {
             "max_completion_tokens": MAX_OUTPUT_TOKENS,
             "messages": messages
         });
-        let resp = self.send(api_key, model, body).await?;
+        let resp = self.send(api_key, model, body, None).await?;
         read_stream(resp, on_delta).await
     }
 
     /// One non-streamed call that must answer with a JSON object.
     pub async fn complete_json(&self, api_key: &str, model: &str, messages: &[Value], max_tokens: u32) -> Result<Value, String> {
+        self.json_request(api_key, model, messages, max_tokens, None).await
+    }
+
+    /// GitHub analysis gets a separate reasoning policy from latency-sensitive replies.
+    pub async fn complete_json_reasoning(&self, api_key: &str, model: &str, messages: &[Value], max_tokens: u32, effort: &str) -> Result<Value, String> {
+        let effort = analysis_effort(model, effort);
+        self.json_request(api_key, model, messages, max_tokens, effort).await
+    }
+
+    async fn json_request(&self, api_key: &str, model: &str, messages: &[Value], max_tokens: u32, effort: Option<&str>) -> Result<Value, String> {
         let body = json!({
             "model": model,
             "store": false,
@@ -72,11 +82,10 @@ impl OpenAi {
             "response_format": { "type": "json_object" },
             "messages": messages
         });
-        let resp = self.send(api_key, model, body).await?;
+        let resp = self.send(api_key, model, body, effort).await?;
         let text = resp.text().await.map_err(|e| network_error(&e))?;
         let v: Value = serde_json::from_str(&text).map_err(|_| "OpenAI returned an unreadable response.".to_string())?;
-        let content = v["choices"][0]["message"]["content"].as_str().unwrap_or_default();
-        serde_json::from_str(content).map_err(|_| "OpenAI returned an unreadable analysis. Try again.".to_string())
+        parse_json_completion(&v)
     }
 
     /// Speech to text for voice commands (16 kHz mono WAV). Tries the fast model, then whisper-1.
@@ -115,11 +124,15 @@ impl OpenAi {
         Err("Voice transcription isn't available for this OpenAI account.".into())
     }
 
-    /// POSTs to Chat Completions, adding the lowest reasoning effort the model allows
-    /// (and dropping it for models that reject it).
-    async fn send(&self, api_key: &str, model: &str, mut body: Value) -> Result<reqwest::Response, String> {
+    /// Explicit analysis effort takes priority over the fast-reply default.
+    /// Only implicit fast-reply settings may fall back when rejected.
+    async fn send(&self, api_key: &str, model: &str, mut body: Value, requested_effort: Option<&str>) -> Result<reqwest::Response, String> {
         let skip_reasoning = self.no_reasoning_param.lock().map(|s| s.contains(model)).unwrap_or(false);
-        let mut effort = if skip_reasoning { None } else { reasoning_effort(model) };
+        // A failed fast-reply setting must not suppress explicit analysis reasoning.
+        let mut effort = requested_effort.or_else(|| if skip_reasoning { None } else { reasoning_effort(model) });
+        if requested_effort.is_some() {
+            body["service_tier"] = json!("default");
+        }
         loop {
             match effort {
                 Some(e) => body["reasoning_effort"] = json!(e),
@@ -134,6 +147,7 @@ impl OpenAi {
                 .post(format!("{API_BASE}/chat/completions"))
                 .bearer_auth(api_key)
                 .header("content-type", "application/json")
+                .timeout(Duration::from_secs(if requested_effort.is_some() { 180 } else { 90 }))
                 .body(body.to_string())
                 .send()
                 .await
@@ -148,7 +162,7 @@ impl OpenAi {
                 .ok()
                 .and_then(|v| v["error"]["message"].as_str().map(str::to_owned))
                 .unwrap_or_default();
-            if status.as_u16() == 400 && effort.is_some() && message.contains("reasoning") {
+            if status.as_u16() == 400 && requested_effort.is_none() && effort.is_some() && message.contains("reasoning") {
                 if let Ok(mut set) = self.no_reasoning_param.lock() {
                     set.insert(model.to_owned());
                 }
@@ -158,6 +172,27 @@ impl OpenAi {
             return Err(http_error(status.as_u16(), &message));
         }
     }
+}
+
+fn analysis_effort<'a>(model: &str, effort: &'a str) -> Option<&'a str> {
+    reasoning_effort(model).map(|_| effort)
+}
+
+fn parse_json_completion(v: &Value) -> Result<Value, String> {
+    let choice = &v["choices"][0];
+    if choice["finish_reason"] == "length" {
+        return Err("Analysis reached its token budget before finishing. Try lower GitHub Debug reasoning or a more focused issue.".into());
+    }
+    if choice["finish_reason"] == "content_filter" || choice["message"]["refusal"].as_str().is_some() {
+        return Err("OpenAI couldn't provide an analysis for this request.".into());
+    }
+    let content = choice["message"]["content"].as_str().unwrap_or_default();
+    let parsed: Value = serde_json::from_str(content)
+        .map_err(|_| "OpenAI returned an unreadable analysis. Try again.".to_string())?;
+    if !parsed.is_object() {
+        return Err("OpenAI returned an unreadable analysis. Try again.".into());
+    }
+    Ok(parsed)
 }
 
 /// Reasoning models are slow by default; ask for the least reasoning they allow.
@@ -272,5 +307,24 @@ mod tests {
         assert_eq!(reasoning_effort("gpt-5.1"), Some("none"));
         assert_eq!(reasoning_effort("o4-mini"), Some("low"));
         assert_eq!(reasoning_effort("omni"), None);
+    }
+
+    #[test]
+    fn analysis_reasoning_is_independent_of_fast_replies() {
+        assert_eq!(analysis_effort("gpt-5-mini", "medium"), Some("medium"));
+        assert_eq!(reasoning_effort("gpt-5-mini"), Some("minimal"));
+        assert_eq!(analysis_effort("gpt-5.1", "high"), Some("high"));
+        assert_eq!(analysis_effort("o4-mini", "low"), Some("low"));
+        assert_eq!(analysis_effort("gpt-4.1-mini", "medium"), None);
+    }
+
+    #[test]
+    fn rejects_budget_exhaustion_even_when_partial_json_is_valid() {
+        let response = json!({"choices": [{"finish_reason": "length", "message": {"content": "{\"status\":\"found\"}"}}]});
+        assert!(parse_json_completion(&response).unwrap_err().contains("token budget"));
+        let response = json!({"choices": [{"finish_reason": "stop", "message": {"content": "{\"status\":\"uncertain\"}"}}]});
+        assert_eq!(parse_json_completion(&response).unwrap()["status"], "uncertain");
+        let refused = json!({"choices": [{"finish_reason": "stop", "message": {"refusal": "Cannot comply"}}]});
+        assert!(parse_json_completion(&refused).is_err());
     }
 }
