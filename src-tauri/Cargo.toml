@@ -1,6 +1,6 @@
 [package]
 name = "pastepilot"
-version = "1.4.1"
+version = "1.5.0"
 description = "Menu bar assistant that drafts support replies from selected text"
 edition = "2021"
 
