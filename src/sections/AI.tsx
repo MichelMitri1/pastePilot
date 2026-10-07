@@ -1,6 +1,7 @@
 import { MODES } from "../api";
 import type { ModeId, Settings } from "../api";
 import type { SectionProps } from "./types";
+import { ALT, CMD, ENTER, MENU, SHIFT } from "../platform";
 
 // Fast, non-reasoning models first. Any model id can be typed in.
 const MODELS = ["gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o-mini", "gpt-5-mini", "gpt-5-nano", "gpt-4.1"];
@@ -46,13 +47,25 @@ export default function AI({ settings, update, status }: SectionProps) {
           <input type="checkbox" checked={settings.debugOneClick} onChange={(e) => update("debugOneClick", e.target.checked)} />
           <span>
             One-click debugging <span className="muted small">(when the selected message has a repo link and describes the problem,
-            ⌥G diagnoses and pastes the reply without opening the window; the menu bar item always opens it)</span>
+            {ALT}G diagnoses and writes the reply without you filling in the form; the {MENU} item always opens it)</span>
           </span>
         </label>
         <label className="check">
           <input type="checkbox" checked={settings.debugIncludeSnippet} onChange={(e) => update("debugIncludeSnippet", e.target.checked)} />
           <span>Include the complete corrected code section in replies when there is one</span>
         </label>
+        <div className="row">
+          <span>Review fixes before pasting</span>
+          <select value={settings.debugReview} onChange={(e) => update("debugReview", e.target.value as Settings["debugReview"])} style={{ width: "auto" }}>
+            <option value="always">Always</option>
+            <option value="unsure">Unless high confidence</option>
+            <option value="never">Never</option>
+          </select>
+        </div>
+        <span className="muted small">
+          One-click stops before pasting and shows the fix next to the student's real code. {CMD}{SHIFT}{ENTER} pastes it.
+          Replies that only ask the student for more info always paste straight away.
+        </span>
       </section>
 
       <h3>Mode instructions</h3>

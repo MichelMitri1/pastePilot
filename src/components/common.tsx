@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isMac } from "../platform";
 
 const MODIFIER_CODES = new Set([
   "MetaLeft", "MetaRight", "AltLeft", "AltRight", "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight",
@@ -21,8 +22,10 @@ function shortcutFromEvent(e: React.KeyboardEvent): string | null {
 }
 
 export const prettyShortcut = (s: string) =>
-  s ? s.replace(/Cmd|Super|Command/g, "⌘").replace(/Alt|Option/g, "⌥").replace(/Ctrl|Control/g, "⌃")
-    .replace(/Shift/g, "⇧").replace(/\+/g, " ") : "None";
+  !s ? "None"
+    : isMac ? s.replace(/Cmd|Super|Command/g, "⌘").replace(/Alt|Option/g, "⌥").replace(/Ctrl|Control/g, "⌃")
+      .replace(/Shift/g, "⇧").replace(/\+/g, " ")
+    : s.replace(/Cmd|Super|Command/g, "Win").replace(/Option/g, "Alt").replace(/Control/g, "Ctrl");
 
 export function ShortcutInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [recording, setRecording] = useState(false);

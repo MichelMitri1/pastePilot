@@ -7,6 +7,7 @@ import Diff from "../debug/Diff";
 import { imagesFrom, toDataUrl } from "../debug/screenshots";
 import "../debug/debug.css";
 import "./review.css";
+import { CMD, ENTER, SHIFT, modKey } from "../platform";
 
 type Phase = "idle" | "reviewing" | "writing" | "ready";
 const VIEWPORTS = ["desktop", "tablet", "mobile"] as const;
@@ -139,10 +140,10 @@ export default function ReviewApp() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && e.metaKey && e.shiftKey) {
+      if (e.key === "Enter" && modKey(e) && e.shiftKey) {
         e.preventDefault();
         paste();
-      } else if (e.key === "Enter" && e.metaKey) {
+      } else if (e.key === "Enter" && modKey(e)) {
         e.preventDefault();
         review();
       } else if (e.key === "Escape") {
@@ -244,7 +245,7 @@ export default function ReviewApp() {
           <textarea rows={4} placeholder={"- Responsive navbar with a mobile menu\n- Products section with 4 cards\n- Footer with social links"} value={requirements} onChange={(e) => setRequirements(e.target.value)} />
           <label>Notes for the review</label>
           <textarea rows={2} placeholder="e.g. focus on the mobile layout" value={notes} onChange={(e) => setNotes(e.target.value)} />
-          <label>Screenshots <span className="muted">(paste with ⌘V, drop, or choose)</span></label>
+          <label>Screenshots <span className="muted">(paste with {CMD}V, drop, or choose)</span></label>
           <div className="shots">
             {shots.map((s, i) => (
               <div className="shot" key={i}>
@@ -267,7 +268,7 @@ export default function ReviewApp() {
             <span>{v}</span>
           </label>
         ))}
-        <span className="muted small">{busy ? progress : "⌘↩ · read-only: nothing is run, changed or sent"}</span>
+        <span className="muted small">{busy ? progress : `${CMD}${ENTER} · read-only: nothing is run, changed or sent`}</span>
       </div>
 
       {error && <div className="banner error-banner">{error}</div>}
@@ -299,7 +300,7 @@ export default function ReviewApp() {
               <button disabled={busy || !reply.trim()} onClick={async () => { await api.reviewCopy(reply); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? "Copied" : "Copy"}</button>
               <button disabled={busy || !result} onClick={() => writeFeedback(length, includeMinor)}>Regenerate</button>
             </div>
-            <span className="muted small">⌘⇧↩ to paste · never sends</span>
+            <span className="muted small">{CMD}{SHIFT}{ENTER} to paste · never sends</span>
           </div>
         </section>
       )}

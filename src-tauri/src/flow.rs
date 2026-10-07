@@ -7,7 +7,7 @@
 //! Return/Enter is never pressed anywhere in this file.
 
 use crate::db::{self, Db, Role};
-use crate::macos::{action_bar, apps, ax, focus_tracker, hud, keys, pasteboard};
+use crate::platform::{action_bar, apps, ax, focus_tracker, hud, kbd, keys, pasteboard};
 use crate::memory::{self, Scope, Turn};
 use crate::modes::{self, Mode};
 use crate::rewrite::{self, RewriteAction, RewriteDelivery};
@@ -195,7 +195,7 @@ async fn generate(app: &AppHandle, how: Trigger) {
     let mode = prepared.mode.label();
     match delivery {
         // Students often paste their repo link: offer GitHub Debug right away.
-        Delivery::Pasted if repo_hint => hud::show(app, &format!("Reply pasted · {mode} · Repo link found: ⌥G to debug it"), Some(LONG)),
+        Delivery::Pasted if repo_hint => hud::show(app, &format!("Reply pasted · {mode} · Repo link found: {}G to debug it", kbd::ALT), Some(LONG)),
         Delivery::Pasted if settings.show_hud => hud::show(app, &format!("Reply pasted · {mode}"), Some(SHORT)),
         Delivery::Pasted => hud::hide(app),
         Delivery::CopiedNoInput => hud::show(app, "Reply copied to clipboard.", Some(MEDIUM)),
@@ -391,7 +391,7 @@ async fn followup(app: &AppHandle, action: Followup) {
         RewriteDelivery::Replaced if settings.show_hud => hud::show(app, &format!("Reply updated · {label}"), Some(SHORT)),
         RewriteDelivery::Replaced => hud::hide(app),
         RewriteDelivery::Copied => hud::show(app, "New version copied", Some(SHORT)),
-        RewriteDelivery::CopiedNotFound => hud::show(app, "New version copied. Select your draft and press ⌘V.", Some(LONG)),
+        RewriteDelivery::CopiedNotFound => hud::show(app, &format!("New version copied. Select your draft and press {}V.", kbd::CMD), Some(LONG)),
     }
     if settings.rewrite_bar {
         action_bar::show(app, mode);

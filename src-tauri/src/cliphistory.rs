@@ -6,7 +6,7 @@
 //! transient (password managers do this) are never recorded.
 
 use crate::db::{self, Db};
-use crate::macos::pasteboard;
+use crate::platform::pasteboard;
 use crate::state::AppState;
 use rusqlite::params;
 use serde::Serialize;
@@ -150,7 +150,7 @@ pub fn start_watcher(app: &AppHandle) {
                 continue;
             }
             if let Some(text) = pasteboard::read_string() {
-                let source = crate::macos::apps::frontmost_pid().and_then(crate::macos::apps::bundle_id).unwrap_or_default();
+                let source = crate::platform::apps::frontmost_pid().and_then(crate::platform::apps::bundle_id).unwrap_or_default();
                 record(&app, "copied", &text, &source);
             }
         }

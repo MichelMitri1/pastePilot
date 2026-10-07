@@ -6,7 +6,7 @@
 //! be found (e.g. the user already edited it), the new version is only put on
 //! the clipboard. Return is never pressed.
 
-use crate::macos::{apps, ax, focus_tracker, keys, pasteboard};
+use crate::platform::{apps, ax, focus_tracker, keys, pasteboard};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -91,7 +91,7 @@ pub fn deliver(pid: i32, old_reply: &str, new_reply: &str, auto_paste: bool) -> 
         }
         sleep(Duration::from_millis(30));
         // Only paste once we've confirmed the old reply is what's selected.
-        let selected = input.attr_string("AXSelectedText").unwrap_or_default();
+        let selected = ax::selected_text_in(&input).unwrap_or_default();
         if same_text(&selected, old_reply) {
             keys::paste();
             return (RewriteDelivery::Replaced, Some(input));

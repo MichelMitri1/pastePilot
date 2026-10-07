@@ -3,6 +3,7 @@ import * as api from "../api";
 import type { MemoryStatus } from "../api";
 import { ConfirmButton, NumberField, Toggle } from "../components/common";
 import type { SectionProps } from "./types";
+import { ALT, MENU, SHIFT } from "../platform";
 
 export default function Memory({ settings, update, flash }: SectionProps) {
   const [memory, setMemory] = useState<MemoryStatus | null>(null);
@@ -28,7 +29,7 @@ export default function Memory({ settings, update, flash }: SectionProps) {
         <span className="muted small">
           {settings.memoryAutoDetect
             ? "Each ticket or chat page gets its own context, so different students never mix."
-            : "Manual session: everything goes into one conversation until you start a new one (⌥⇧R or the menu bar)."}
+            : `Manual session: everything goes into one conversation until you start a new one (${ALT}${SHIFT}R or the ${MENU}).`}
         </span>
       </section>
 
@@ -56,7 +57,7 @@ export default function Memory({ settings, update, flash }: SectionProps) {
             </ul>
           </>
         ) : (
-          <span className="muted">No active conversation. One starts with your next ⌥R.</span>
+          <span className="muted">No active conversation. One starts with your next {ALT}R.</span>
         )}
         <div className="row">
           <button onClick={() => api.newConversation().then(load)}>New conversation</button>

@@ -9,7 +9,7 @@
 //! "add to case", "clear case", "save example".
 
 use crate::flow::{self, Followup, Trigger};
-use crate::macos::hud;
+use crate::platform::{hud, kbd};
 use crate::rewrite::RewriteAction;
 use crate::state::AppState;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -19,6 +19,10 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 const MAX_SECONDS: u64 = 10;
+#[cfg(target_os = "macos")]
+const MIC_SETTINGS: &str = "System Settings → Privacy & Security → Microphone";
+#[cfg(windows)]
+const MIC_SETTINGS: &str = "Settings → Privacy & security → Microphone";
 const TARGET_RATE: u32 = 16_000;
 
 struct Recording {
@@ -85,7 +89,7 @@ pub fn on_press(app: &AppHandle) {
         let _ = done_tx.send(record(stop_rx));
     });
     *active = Some(Recording { stop: stop_tx, done: done_rx });
-    hud::show(app, "Listening… release ⌥V when done", None);
+    hud::show(app, &format!("Listening… release {}V when done", kbd::ALT), None);
 }
 
 /// Key up: stop, transcribe, run the command.
@@ -107,7 +111,7 @@ pub fn on_release(app: &AppHandle) {
             }
         };
         if samples.len() < (rate as usize) / 3 {
-            hud::show(&app, "Hold ⌥V while you speak.", Some(Duration::from_secs(2)));
+            hud::show(&app, &format!("Hold {}V while you speak.", kbd::ALT), Some(Duration::from_secs(2)));
             return;
         }
         let state = app.state::<AppState>();
@@ -151,7 +155,7 @@ fn run(app: &AppHandle, cmd: Command) {
 fn record(stop: mpsc::Receiver<()>) -> Result<(Vec<f32>, u32), String> {
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or("No microphone found.")?;
-    let config = device.default_input_config().map_err(|_| "Couldn't open the microphone. Check System Settings → Privacy & Security → Microphone.".to_string())?;
+    let config = device.default_input_config().map_err(|_| format!("Couldn't open the microphone. Check {MIC_SETTINGS}."))?;
     let rate = config.sample_rate();
     let channels = config.channels().max(1) as usize;
     let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(rate as usize * 4)));
@@ -183,7 +187,7 @@ fn record(stop: mpsc::Receiver<()>) -> Result<(Vec<f32>, u32), String> {
         cpal::SampleFormat::U16 => stream_for!(u16, |s: u16| (s as f32 - 32768.0) / 32768.0),
         _ => return Err("Unsupported microphone format.".into()),
     }
-    .map_err(|_| "Couldn't start the microphone. Allow PastePilot in System Settings → Privacy & Security → Microphone.".to_string())?;
+    .map_err(|_| format!("Couldn't start the microphone. Allow PastePilot in {MIC_SETTINGS}."))?;
     stream.play().map_err(|_| "Couldn't start the microphone.".to_string())?;
     let _ = stop.recv_timeout(Duration::from_secs(MAX_SECONDS));
     drop(stream);

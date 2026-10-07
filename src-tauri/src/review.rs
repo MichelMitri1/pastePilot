@@ -25,7 +25,7 @@ use crate::checks::{self, Check};
 use crate::codebase::{self, language, num, snippet, strip_fences, Limits, Snippet, Workspace};
 use crate::db;
 use crate::github::{self, TreeEntry};
-use crate::macos::{action_bar, apps, ax, hud, pasteboard};
+use crate::platform::{action_bar, apps, ax, hud, pasteboard};
 use crate::memory::{self, Scope, Turn};
 use crate::modes::Mode;
 use crate::project::{self, ProjectInfo};

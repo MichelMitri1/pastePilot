@@ -1,7 +1,7 @@
 //! Commands invoked by the Settings window (see src/api.ts).
 
 use crate::db::{self, ConversationInfo, KbEntry, ReplyExample};
-use crate::macos::ax;
+use crate::platform::ax;
 use crate::modes::ModeInstructions;
 use crate::prompt::DEFAULT_STYLE;
 use crate::settings::Settings;
@@ -96,9 +96,9 @@ pub fn request_accessibility() -> bool {
 
 #[tauri::command]
 pub fn open_accessibility_settings() {
-    let _ = std::process::Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-        .spawn();
+    // Windows has no Accessibility permission to grant.
+    #[cfg(target_os = "macos")]
+    let _ = crate::platform::open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
 }
 
 // ----- Reply examples -----------------------------------------------------
@@ -302,7 +302,7 @@ pub fn clear_clipboard(state: State<AppState>) -> CmdResult<()> {
 #[tauri::command]
 pub fn copy_clipboard_item(state: State<AppState>, id: i64) -> CmdResult<()> {
     let item = cliphistory::get_many(&state.db(), &[id]).into_iter().next().ok_or("That item no longer exists.")?;
-    crate::macos::pasteboard::write_string(&item.content);
+    crate::platform::pasteboard::write_string(&item.content);
     Ok(())
 }
 

@@ -31,7 +31,7 @@ use crate::db;
 use crate::flow;
 use crate::codebase::{self, language, num, snippet, strip_fences, truncate_at_line, Limits, Snippet, Workspace};
 use crate::github::{self, CommitInfo, RepoRef, TreeEntry};
-use crate::macos::{action_bar, apps, ax, hud, pasteboard};
+use crate::platform::{action_bar, apps, ax, hud, kbd, pasteboard};
 use crate::memory::{self, Scope, Turn};
 use crate::modes::{self, Mode};
 use crate::project::{self, ProjectInfo};
@@ -113,6 +113,8 @@ pub struct Review {
     include_snippet: bool,
     repo_url: String,
     issue: String,
+    /// One-click is waiting for you to approve the fix; nothing has been pasted yet.
+    pending: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -226,6 +228,7 @@ static HEADLESS: AtomicBool = AtomicBool::new(false);
 static ONE_CLICK_BUSY: AtomicBool = AtomicBool::new(false);
 /// Next window open shows the last diagnosis instead of a fresh form.
 static REVIEW: AtomicBool = AtomicBool::new(false);
+static REVIEW_PENDING: AtomicBool = AtomicBool::new(false);
 /// Screenshots you copied this long ago or less are attached automatically.
 const RECENT_SCREENSHOT: Duration = Duration::from_secs(300);
 
@@ -392,6 +395,12 @@ async fn one_click(app: AppHandle, plan: OneClick) {
                 && analysis.status == "found"
                 && analysis.findings.iter().any(|f| f.after.is_some());
             match generate_reply_core(&app, include, false).await {
+                Ok(_) if needs_review(&settings.debug_review, &analysis) => {
+                    HEADLESS.store(false, Ordering::SeqCst);
+                    hud::show(&app, &format!("Check the fix, then {}{}{} to paste", kbd::CMD, kbd::SHIFT, kbd::ENTER), Some(Duration::from_secs(3)));
+                    show_review(&app, true);
+                    Ok(())
+                }
                 Ok(reply) => {
                     HEADLESS.store(false, Ordering::SeqCst);
                     paste_core(&app, reply, true).await
@@ -411,6 +420,17 @@ async fn one_click(app: AppHandle, plan: OneClick) {
     }
 }
 
+/// One-click: show the fix for approval before anything is pasted? Replies that only
+/// ask the student for more info contain no fix, so they paste straight away.
+fn needs_review(setting: &str, a: &Analysis) -> bool {
+    a.status == "found"
+        && match setting {
+            "never" => false,
+            "unsure" => a.confidence != "high",
+            _ => true,
+        }
+}
+
 fn context(app: &AppHandle) -> DebugContext {
     let settings = app.state::<AppState>().settings();
     let target = session().target.clone();
@@ -418,12 +438,14 @@ fn context(app: &AppHandle) -> DebugContext {
     let scope = target.as_ref().and_then(|t| t.scope.clone());
     let (repo_url, history_count, _) = detect_repo(app, &issue, scope.as_ref());
     let review = if REVIEW.swap(false, Ordering::SeqCst) {
+        let pending = REVIEW_PENDING.swap(false, Ordering::SeqCst);
         session().stored.clone().map(|st| Review {
             analysis: st.analysis,
             reply: st.reply.unwrap_or_default(),
             include_snippet: st.include_snippet,
             repo_url: st.repo_url,
             issue: st.issue,
+            pending,
         })
     } else {
         None
@@ -444,7 +466,12 @@ fn context(app: &AppHandle) -> DebugContext {
 
 /// Opens the window on the last diagnosis (the rewrite bar's "Diagnosis" button).
 pub fn open_review(app: &AppHandle) {
+    show_review(app, false);
+}
+
+fn show_review(app: &AppHandle, pending: bool) {
     REVIEW.store(true, Ordering::SeqCst);
+    REVIEW_PENDING.store(pending, Ordering::SeqCst);
     windows::open_debug(app);
     let _ = app.emit_to(WINDOW_LABEL, "debug-context", context(app));
 }
@@ -1231,9 +1258,10 @@ async fn generate_reply_core(app: &AppHandle, include_snippet: bool, stream_to_w
 // ---------------------------------------------------------------------------
 
 /// "Paste Reply": closes the window, returns to the support chat, pastes. Never presses Enter.
+/// Guarded, because you may have moved to another ticket while reviewing.
 #[tauri::command]
 pub async fn debug_paste(app: AppHandle, reply: String) -> Result<(), String> {
-    paste_core(&app, reply, false).await
+    paste_core(&app, reply, true).await
 }
 
 /// Shared by the window and one-click. `guard_ticket`: if you moved to a different
@@ -1346,7 +1374,7 @@ pub fn open_github_url(url: String) -> Result<(), String> {
     if !url.starts_with("https://github.com/") || url.contains(char::is_whitespace) {
         return Err("Only GitHub links can be opened.".into());
     }
-    std::process::Command::new("open").arg(&url).spawn().map(|_| ()).map_err(|e| e.to_string())
+    crate::platform::open_url(&url).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1401,6 +1429,16 @@ mod tests {
             screenshots: 0,
             issue_type: "CSS & layout".into(),
         }
+    }
+
+    #[test]
+    fn one_click_reviews_fixes_per_setting() {
+        assert!(needs_review("always", &analysis("found", "high")));
+        assert!(!needs_review("unsure", &analysis("found", "high")));
+        assert!(needs_review("unsure", &analysis("found", "medium")));
+        assert!(!needs_review("never", &analysis("found", "low")));
+        // Asking for more info has no fix to check.
+        assert!(!needs_review("always", &analysis("uncertain", "low")));
     }
 
     #[test]

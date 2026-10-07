@@ -7,6 +7,8 @@
 // Steps: bump the version → build the .app and .dmg → sign the update with
 // ~/.tauri/pastepilot.key → write latest.json → commit, tag, push → create the
 // GitHub release with the files. Installed apps then see the update.
+// The pushed tag also starts .github/workflows/windows.yml, which adds the
+// Windows installer to the same release about 15 minutes later.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -149,4 +151,6 @@ const gh = spawnSync(
 );
 if (gh.status !== 0) fail(`The tag v${version} is pushed but the release wasn't created. Re-run the "gh release create" step above.`);
 
-console.log(`\n✔ PastePilot ${version} is live. Installed apps will offer it under Check for Updates.\n`);
+console.log(`\n✔ PastePilot ${version} is live for Mac. Installed apps will offer it under Check for Updates.`);
+console.log(`  The Windows build is running on GitHub Actions and joins the release in about 15 minutes:`);
+console.log(`  https://github.com/${REPO}/actions/workflows/windows.yml\n`);

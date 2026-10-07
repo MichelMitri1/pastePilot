@@ -34,6 +34,24 @@ objc2-foundation = { version = "0.3", features = ["NSString", "NSNotification", 
 objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication", "NSPasteboard", "NSPasteboardItem", "NSPanel", "NSWindow", "NSResponder", "NSView", "NSVisualEffectView", "NSTextField", "NSControl", "NSText", "NSColor", "NSFont", "NSScreen", "NSGraphics", "NSApplication", "NSCell", "NSButton", "NSButtonCell", "NSPopUpButton", "NSMenu", "NSMenuItem", "NSAppearance", "NSBitmapImageRep", "NSImageRep", "block2"] }
 block2 = "0.6"
 
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security_Credentials",
+    "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_Accessibility",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
+
 [profile.release]
 codegen-units = 1
 lto = true

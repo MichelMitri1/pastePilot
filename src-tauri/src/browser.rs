@@ -79,6 +79,7 @@ pub fn normalize_url(input: &str) -> Result<String, String> {
     Ok(parsed.to_string())
 }
 
+#[cfg(target_os = "macos")]
 pub fn find_chrome() -> Option<PathBuf> {
     let home = std::env::var("HOME").unwrap_or_default();
     let names = [
@@ -98,6 +99,22 @@ pub fn find_chrome() -> Option<PathBuf> {
     }
     None
 }
+
+#[cfg(windows)]
+pub fn find_chrome() -> Option<PathBuf> {
+    // Edge ships with Windows, so there's almost always one.
+    let names = [
+        r"Google\Chrome\Application\chrome.exe",
+        r"Microsoft\Edge\Application\msedge.exe",
+        r"BraveSoftware\Brave-Browser\Application\brave.exe",
+        r"Chromium\Application\chrome.exe",
+    ];
+    let bases: Vec<String> = ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"].iter().filter_map(|v| std::env::var(v).ok()).collect();
+    names.iter().flat_map(|n| bases.iter().map(move |b| Path::new(b).join(n))).find(|p| p.exists())
+}
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// When a Chrome run has produced what we need. Chrome often keeps running in the
 /// background after finishing (updater/helpers), so we watch the output instead of
@@ -139,7 +156,10 @@ fn run_chrome(chrome: &Path, extra: &[String], url: &str, done: Done) -> Option<
     let mut cmd = Command::new(chrome);
     cmd.args(&args).stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
     // Own process group, so we can stop Chrome *and* its helper processes.
+    #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+    #[cfg(windows)]
+    std::os::windows::process::CommandExt::creation_flags(&mut cmd, CREATE_NO_WINDOW);
     let mut child = cmd.spawn().ok()?;
     let pid = child.id();
 
@@ -180,7 +200,14 @@ fn run_chrome(chrome: &Path, extra: &[String], url: &str, done: Done) -> Option<
             break; // output complete
         }
     }
+    #[cfg(unix)]
     let _ = Command::new("kill").args(["-9", &format!("-{pid}")]).stderr(Stdio::null()).status();
+    #[cfg(windows)]
+    let _ = std::os::windows::process::CommandExt::creation_flags(
+        Command::new("taskkill").args(["/F", "/T", "/PID", &pid.to_string()]).stdout(Stdio::null()).stderr(Stdio::null()),
+        CREATE_NO_WINDOW,
+    )
+    .status();
     let _ = child.kill();
     let _ = child.wait();
     std::thread::sleep(Duration::from_millis(100));
@@ -244,7 +271,7 @@ fn screenshot(chrome: &Path, url: &str, vp: Viewport) -> Option<Shot> {
     )?;
     let bytes = std::fs::read(&file).ok();
     let _ = std::fs::remove_file(&file);
-    let data_url = crate::macos::image::jpeg_data_url(&bytes?, 0.72, 5_000_000)?;
+    let data_url = crate::platform::image::jpeg_data_url(&bytes?, 0.72, 5_000_000)?;
     Some(Shot { viewport: vp.name.to_string(), width: vp.width, data_url })
 }
 

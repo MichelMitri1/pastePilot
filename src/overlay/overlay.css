@@ -1,0 +1,55 @@
+/* Matches the macOS HUD panels: dark, translucent, rounded, white text. */
+html.overlay,
+html.overlay body,
+html.overlay #root {
+  background: transparent;
+  overflow: hidden;
+  height: auto;
+}
+
+html.overlay .pill {
+  width: max-content;
+  height: 34px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  border-radius: 10px;
+  background: rgba(30, 30, 32, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font: 500 13px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  white-space: nowrap;
+  cursor: default;
+}
+
+html.overlay .pill.bar {
+  height: 38px;
+  padding: 0 8px;
+  gap: 4px;
+}
+
+html.overlay .bar button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 9px;
+  cursor: default;
+}
+
+html.overlay .bar button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+html.overlay .bar button.mode,
+html.overlay .bar button.on {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+html.overlay .bar button.mode {
+  margin-right: 4px;
+}

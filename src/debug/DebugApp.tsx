@@ -6,6 +6,7 @@ import type { Analysis, DebugContext, Finding } from "../api";
 import Diff from "./Diff";
 import { imagesFrom, toDataUrl } from "./screenshots";
 import "./debug.css";
+import { ALT, CMD, ENTER, SHIFT, modKey } from "../platform";
 
 type Phase = "idle" | "analyzing" | "writing" | "ready";
 
@@ -27,6 +28,9 @@ export default function DebugApp() {
   const [includeSnippet, setIncludeSnippet] = useState(false);
   const [copied, setCopied] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // One-click stopped before pasting so you can check the fix.
+  const [pending, setPending] = useState(false);
+  const pendingBanner = useRef<HTMLDivElement>(null);
   const streaming = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -41,9 +45,11 @@ export default function DebugApp() {
       setAnalysis(c.review.analysis);
       setReply(c.review.reply);
       setIncludeSnippet(c.review.includeSnippet);
+      setPending(c.review.pending);
       setPhase("ready");
       return;
     }
+    setPending(false);
     if (c.issue) setIssue(c.issue);
     if (c.repoUrl) setRepoUrl((current) => current || c.repoUrl);
     if (c.screenshot) setShots((s) => (s.includes(c.screenshot!) ? s : [c.screenshot!, ...s].slice(0, MAX_SCREENSHOTS)));
@@ -75,7 +81,7 @@ export default function DebugApp() {
     }
   }, []);
 
-  // ⌘V a screenshot anywhere in the window.
+  // Paste a screenshot anywhere in the window.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const images = imagesFrom(e.clipboardData?.items ?? null);
@@ -89,6 +95,10 @@ export default function DebugApp() {
   }, [addImages]);
 
   const busy = phase === "analyzing" || phase === "writing";
+
+  useEffect(() => {
+    if (pending) pendingBanner.current?.scrollIntoView({ block: "start" });
+  }, [pending]);
 
   const writeReply = useCallback(async (snippet: boolean) => {
     setPhase("writing");
@@ -112,6 +122,7 @@ export default function DebugApp() {
     setError(null);
     setAnalysis(null);
     setReply("");
+    setPending(false);
     if (!repoUrl.trim() && !shots.length) return setError("Paste the student's GitHub repository URL, or add a screenshot.");
     if (!issue.trim() && !shots.length) return setError("Add the student's message or a screenshot.");
     setPhase("analyzing");
@@ -151,10 +162,10 @@ export default function DebugApp() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && e.metaKey && e.shiftKey) {
+      if (e.key === "Enter" && modKey(e) && e.shiftKey) {
         e.preventDefault();
         paste();
-      } else if (e.key === "Enter" && e.metaKey) {
+      } else if (e.key === "Enter" && modKey(e)) {
         e.preventDefault();
         analyze();
       } else if (e.key === "Escape") {
@@ -202,11 +213,11 @@ export default function DebugApp() {
           <label>Student issue</label>
           {!!ctx?.caseMessages && <span className="tag">Combined from {ctx.caseMessages} messages</span>}
         </div>
-        <textarea rows={4} placeholder="Select the student's message before pressing ⌥G, or paste it here." value={issue} onChange={(e) => setIssue(e.target.value)} />
+        <textarea rows={4} placeholder={`Select the student's message before pressing ${ALT}G, or paste it here.`} value={issue} onChange={(e) => setIssue(e.target.value)} />
       </section>
 
       <section>
-        <label>Screenshots <span className="muted">(optional: paste with ⌘V, drop, or choose · a screenshot you just copied is attached automatically)</span></label>
+        <label>Screenshots <span className="muted">(optional: paste with {CMD}V, drop, or choose · a screenshot you just copied is attached automatically)</span></label>
         <div className="shots">
           {shots.map((s, i) => (
             <div className="shot" key={i}>
@@ -256,10 +267,16 @@ export default function DebugApp() {
         <button className="primary" disabled={busy} onClick={analyze}>
           {phase === "analyzing" ? "Analyzing…" : repoUrl.trim() ? "Analyze Repository" : "Analyze"}
         </button>
-        <span className="muted small">{busy ? progress : "⌘↩ to analyze · read-only, nothing is run or changed"}</span>
+        <span className="muted small">{busy ? progress : `${CMD}${ENTER} to analyze · read-only, nothing is run or changed`}</span>
       </div>
 
       {error && <div className="banner error-banner">{error}</div>}
+
+      {pending && (
+        <div className="banner" ref={pendingBanner}>
+          <span><strong>Nothing has been pasted yet.</strong> Check the suggested fix against the student's code, edit the reply if needed, then Paste Reply ({CMD}{SHIFT}{ENTER}).</span>
+        </div>
+      )}
 
       {analysis && <Results analysis={analysis} onCopy={copy} />}
 
@@ -289,7 +306,7 @@ export default function DebugApp() {
               <button disabled={busy || !reply.trim()} onClick={() => copy(reply)}>{copied ? "Copied" : "Copy"}</button>
               <button disabled={busy || !analysis} onClick={() => writeReply(canSnippet && includeSnippet)}>Rewrite</button>
             </div>
-            <span className="muted small">⌘⇧↩ to paste · never sends</span>
+            <span className="muted small">{CMD}{SHIFT}{ENTER} to paste · never sends</span>
           </div>
         </section>
       )}
@@ -420,6 +437,9 @@ function FindingView({ finding: f, tentative, repoKnown, projectLabel, issueType
           location && <span className="mono">{location}</span>
         )}
         <div className="row">
+          {f.snippet && repoKnown && (
+            <span className="tag used" title="These lines were read from the student's repository, not written by the AI.">✓ Real code from the repo</span>
+          )}
           {f.before && f.after && (
             <div className="segmented">
               <button className={view === "diff" ? "on" : ""} onClick={() => setView("diff")}>Before/After</button>

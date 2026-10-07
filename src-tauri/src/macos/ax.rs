@@ -237,6 +237,16 @@ pub fn page_url(pid: i32) -> Option<String> {
     app.attr_element("AXFocusedWindow")?.attr_url_or_string("AXDocument").filter(|u| u.contains("://"))
 }
 
+/// Selected text inside a specific element.
+pub fn selected_text_in(el: &Element) -> Option<String> {
+    el.attr_string("AXSelectedText")
+}
+
+/// Whether the element still exists (e.g. the page hasn't removed the input).
+pub fn is_alive(el: &Element) -> bool {
+    el.attr_string("AXRole").is_some()
+}
+
 /// Text content of an editable element.
 pub fn value(el: &Element) -> Option<String> {
     el.attr_string("AXValue")

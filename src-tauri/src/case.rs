@@ -4,7 +4,7 @@
 //! ⌥A adds the current selection. A case belongs to the ticket/chat it was
 //! collected in and is never used for a different one.
 
-use crate::macos::{apps, ax, hud};
+use crate::platform::{apps, ax, hud, kbd};
 use crate::memory;
 use crate::selection;
 use crate::state::AppState;
@@ -51,7 +51,7 @@ fn push(app: &AppHandle, text: String, scope_key: Option<String>) {
     };
     hud::show(
         app,
-        &format!("Added to case ({n} message{}). ⌥R to reply, ⌥G to debug.", if n == 1 { "" } else { "s" }),
+        &format!("Added to case ({n} message{}). {ALT}R to reply, {ALT}G to debug.", if n == 1 { "" } else { "s" }, ALT = kbd::ALT),
         Some(Duration::from_millis(2200)),
     );
 }
@@ -96,7 +96,7 @@ pub fn add_texts(app: &AppHandle, texts: Vec<String>) {
         }
     }
     let n = len();
-    hud::show(app, &format!("Case has {n} message{}. ⌥R to reply, ⌥G to debug.", if n == 1 { "" } else { "s" }), Some(Duration::from_millis(2200)));
+    hud::show(app, &format!("Case has {n} message{}. {ALT}R to reply, {ALT}G to debug.", if n == 1 { "" } else { "s" }, ALT = kbd::ALT), Some(Duration::from_millis(2200)));
 }
 
 pub fn clear(app: &AppHandle) {

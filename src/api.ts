@@ -40,6 +40,7 @@ export interface Settings {
   debugOneClick: boolean;
   reviewShortcut: string;
   debugIncludeSnippet: boolean;
+  debugReview: "always" | "unsure" | "never";
   removeFluff: boolean;
   feedbackLearning: boolean;
   feedbackSaveExamples: boolean;
@@ -131,7 +132,7 @@ export interface DebugContext {
   /** A screenshot you copied in the last few minutes, pre-attached. */
   screenshot: string | null;
   /** Set when opened from the rewrite bar's "Diagnosis" button. */
-  review: { analysis: Analysis; reply: string; includeSnippet: boolean; repoUrl: string; issue: string } | null;
+  review: { analysis: Analysis; reply: string; includeSnippet: boolean; repoUrl: string; issue: string; pending: boolean } | null;
 }
 
 export interface Snippet {

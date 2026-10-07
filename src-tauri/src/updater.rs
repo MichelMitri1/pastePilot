@@ -1,4 +1,4 @@
-use crate::macos::hud;
+use crate::platform::hud;
 use serde::Serialize;
 use std::sync::Mutex;
 use std::time::Duration;

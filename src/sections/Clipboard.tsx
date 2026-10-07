@@ -3,6 +3,7 @@ import * as api from "../api";
 import type { ClipItem } from "../api";
 import { ConfirmButton, NumberField, Toggle } from "../components/common";
 import type { SectionProps } from "./types";
+import { ALT, CMD } from "../platform";
 
 const KIND_LABEL = { student: "Student", reply: "Reply", copied: "Copied" };
 
@@ -39,7 +40,7 @@ export default function Clipboard({ settings, update, flash }: SectionProps) {
     const n = await api.caseAddItems(picked);
     setPicked([]);
     setCaseCount(n);
-    flash(`Case has ${n} message${n === 1 ? "" : "s"}. Press ⌥R or ⌥G in your support chat.`);
+    flash(`Case has ${n} message${n === 1 ? "" : "s"}. Press ${ALT}R or ${ALT}G in your support chat.`);
   };
 
   return (
@@ -49,7 +50,7 @@ export default function Clipboard({ settings, update, flash }: SectionProps) {
           Keep a history of student messages and replies
         </Toggle>
         <Toggle checked={settings.clipboardWatch} onChange={(v) => update("clipboardWatch", v)}>
-          Also record text I copy (⌘C) <span className="muted small">· password-manager copies are never recorded</span>
+          Also record text I copy ({CMD}C) <span className="muted small">· password-manager copies are never recorded</span>
         </Toggle>
       </section>
       <section className="grid">

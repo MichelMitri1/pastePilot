@@ -35,7 +35,9 @@
 //! - codebase.rs   shared read-only repository reader (GitHub Debug + Assignment Review)
 //! - windows.rs    Settings and GitHub Debug windows
 //! - commands.rs   commands called by the React Settings UI
+//! - platform.rs    the native OS layer: macos/ (Accessibility, AppKit) or win/ (UI Automation, Win32)
 //! - macos/        Accessibility, key events, clipboard, app focus, HUD, rewrite bar
+//! - win/          the same on Windows
 
 mod analytics;
 mod browser;
@@ -53,10 +55,12 @@ mod fluff;
 mod github;
 mod import;
 mod keychain;
+#[cfg(target_os = "macos")]
 mod macos;
 mod memory;
 mod modes;
 mod openai;
+mod platform;
 mod project;
 mod prompt;
 mod repo_search;
@@ -71,9 +75,11 @@ mod state;
 mod tray;
 mod updater;
 mod voice;
+#[cfg(windows)]
+mod win;
 mod windows;
 
-use macos::{ax, focus_tracker, hud};
+use platform::{ax, focus_tracker, hud};
 use state::AppState;
 use std::time::Duration;
 use tauri::{Manager, RunEvent};
@@ -146,9 +152,18 @@ pub fn run() {
             review::review_delete_preset,
             updater::check_for_update,
             updater::install_update,
+            #[cfg(windows)]
+            win::overlay::overlay_content,
+            #[cfg(windows)]
+            win::overlay::overlay_fit,
+            #[cfg(windows)]
+            win::action_bar::bar_click,
+            #[cfg(windows)]
+            win::action_bar::bar_mode,
         ])
         .setup(|app| {
             // Menu bar only: no Dock icon, never steals focus on launch.
+            #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
             let handle = app.handle().clone();
@@ -158,6 +173,8 @@ pub fn run() {
 
             ax::set_global_timeout(1.0);
             focus_tracker::start();
+            #[cfg(windows)]
+            win::overlay::prepare(&handle);
             tray::create(&handle)?;
 
             if let Err(message) = shortcut::register_all(&handle, &settings) {

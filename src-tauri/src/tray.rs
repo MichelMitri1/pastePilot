@@ -87,8 +87,13 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     *state.menus.lock().unwrap_or_else(|e| e.into_inner()) =
         Menus { auto_paste: Some(auto_paste), memory: Some(memory), modes: mode_items };
 
+    // macOS: a monochrome menu bar glyph. Windows: the app icon, which reads on light and dark taskbars.
+    #[cfg(target_os = "macos")]
+    let icon = Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+    #[cfg(windows)]
+    let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
     TrayIconBuilder::with_id("main")
-        .icon(Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+        .icon(icon)
         .icon_as_template(true)
         .tooltip("PastePilot")
         .menu(&menu)

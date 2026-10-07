@@ -1,12 +1,13 @@
 import { prettyShortcut, ShortcutInput, Toggle } from "../components/common";
 import type { SectionProps } from "./types";
+import { ALT, MENU } from "../platform";
 
 const REWRITES = [
-  ["⌥1", "Shorter"],
-  ["⌥2", "Friendlier"],
-  ["⌥3", "More professional"],
-  ["⌥4", "Explain more"],
-  ["⌥5", "Regenerate"],
+  [`${ALT}1`, "Shorter"],
+  [`${ALT}2`, "Friendlier"],
+  [`${ALT}3`, "More professional"],
+  [`${ALT}4`, "Explain more"],
+  [`${ALT}5`, "Regenerate"],
 ];
 
 export default function Shortcuts({ settings, update }: SectionProps) {
@@ -50,8 +51,8 @@ export default function Shortcuts({ settings, update }: SectionProps) {
       <section className="card">
         <label>Multi-message cases</label>
         <span className="muted small">
-          Select a student message and choose Add Selection to Case from the menu bar; repeat for each message. The next ⌥R
-          or ⌥G answers them as one case. Cases never carry over to a different ticket.
+          Select a student message and choose Add Selection to Case from the {MENU}; repeat for each message. The next {ALT}R
+          or {ALT}G answers them as one case. Cases never carry over to a different ticket.
         </span>
       </section>
 

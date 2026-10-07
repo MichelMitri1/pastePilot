@@ -11,7 +11,7 @@
 
 use crate::db;
 use crate::{analytics, feedback};
-use crate::macos::{action_bar, ax};
+use crate::platform::{action_bar, ax};
 use crate::memory;
 use crate::state::AppState;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -56,7 +56,7 @@ fn run(app: AppHandle, target: Target, generation: u64) {
         }
         let value = ax::value(&target.input)
             // Empty rich editors sometimes drop AXValue entirely while the element still exists.
-            .or_else(|| target.input.attr_string("AXRole").map(|_| String::new()))
+            .or_else(|| ax::is_alive(&target.input).then(String::new))
             .or_else(|| fallback_value(&target));
         match tracker.observe(value.as_deref(), Instant::now()) {
             Step::Continue => {}

@@ -64,6 +64,8 @@ pub struct Settings {
     pub debug_one_click: bool,
     /// Put the corrected code in one-click replies when there is one.
     pub debug_include_snippet: bool,
+    /// One-click: show the fix for review before pasting. "always", "unsure" (unless high confidence) or "never".
+    pub debug_review: String,
 
     // Reply polish and learning
     /// Strip generic AI phrasing ("Certainly!", "It appears that") before pasting.
@@ -123,6 +125,7 @@ impl Default for Settings {
             debug_compare_commits: false,
             debug_one_click: true,
             debug_include_snippet: false,
+            debug_review: "always".into(),
             remove_fluff: true,
             feedback_learning: true,
             feedback_save_examples: true,

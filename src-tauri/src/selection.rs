@@ -5,7 +5,7 @@
 //!    browsers): send Cmd+C, read the clipboard, then restore the clipboard
 //!    exactly as it was.
 
-use crate::macos::{ax, keys, pasteboard};
+use crate::platform::{ax, keys, pasteboard};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 

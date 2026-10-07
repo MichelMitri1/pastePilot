@@ -9,7 +9,7 @@
 //! Only the most recent messages that fit the configured budget are sent.
 
 use crate::db::{self, Db, Role};
-use crate::macos::{apps, ax};
+use crate::platform::{apps, ax};
 use crate::modes::Mode;
 use crate::settings::Settings;
 

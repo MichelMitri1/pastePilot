@@ -1,8 +1,10 @@
 # PastePilot
 
-**[Download PastePilot for Mac (Apple Silicon)](https://github.com/MichelMitri1/pastePilot/releases/latest/download/PastePilot.dmg)**. After that, the app updates itself from the menu bar with **Check for Updates…**.
+**[Download for Mac (Apple Silicon)](https://github.com/MichelMitri1/pastePilot/releases/latest/download/PastePilot.dmg)** · **[Download for Windows](https://github.com/MichelMitri1/pastePilot/releases/latest/download/PastePilot-Setup.exe)**. After that, the app updates itself with **Check for Updates…** in its menu.
 
-A macOS menu bar app that drafts support replies in your voice.
+A menu bar (Mac) and system tray (Windows) app that drafts support replies in your voice.
+
+Shortcuts are written the Mac way below. On Windows, ⌥ is **Alt** and ⌘ is **Ctrl**: ⌥R is Alt+R, ⌘⇧↩ is Ctrl+Shift+Enter. See [Windows](#windows) for what else differs.
 
 **Select a student's message → press ⌥R → the reply appears in the chat input.**
 
@@ -119,10 +121,11 @@ Reviews a **whole submission** against the official example. Open it from the me
 1. Select the student's message, which should contain their repo link and the problem.
 2. Press **⌥G**.
 
-PastePilot detects the repo URL and the issue, picks the relevant files, diagnoses the problem, writes the reply in your style and pastes it. The window never opens, and nothing is ever sent.
+PastePilot detects the repo URL and the issue, picks the relevant files, diagnoses the problem and writes the reply in your style. You don't fill in anything, and nothing is ever sent.
 
-- **Progress** shows in the status pill. When it's done, the pill says what it found, for example "Reply pasted · high confidence · styles.css:42".
-- **Diagnosis** on the rewrite bar opens the full details: file, lines, before/after diff and checks.
+- **You check the fix before it's pasted.** By default, the window opens on the finished diagnosis with nothing pasted yet. Each fix shows the student's real lines from the repo (marked **✓ Real code from the repo**) next to the suggested change. Edit the reply if needed, then press ⌘⇧↩ to paste. Under **AI → Review fixes before pasting** you can choose **Always** (default), **Unless high confidence** or **Never**. Replies that only ask the student for more info paste straight away.
+- **Progress** shows in the status pill. When a reply is pasted without review, the pill says what it found, for example "Reply pasted · high confidence · styles.css:42".
+- **Diagnosis** on the rewrite bar opens the full details again after pasting: file, lines, before/after diff and checks.
 - **When only a link is selected,** the student's earlier message in this conversation is used as the issue.
 - **Screenshots:** right-click the student's screenshot and choose **Copy Image** (or take one with ⌃⇧⌘4), then select the message and press ⌥G. Only screenshots copied in the last 5 minutes are used. Screenshots are evidence of symptoms; the code stays the source of truth for the cause.
 - **The manual window opens instead when:**
@@ -161,6 +164,18 @@ PastePilot detects the repo URL and the issue, picks the relevant files, diagnos
 - **Feedback learning.** When the reply you send differs a lot from the draft, PastePilot learns concrete rules, like "make replies ~30% shorter" or "avoid 'feel free to'". These are added to your style prompt, and heavily rewritten replies can become reply examples. You can see and reset what it learned under Writing Style.
 - **Voice commands.** These are opt-in under Shortcuts. Hold **⌥V**, say "reply to this", "debug this repo", "shorter", "friendlier", "more professional", "explain more", "regenerate", "new conversation", "add to case" or "save example", then release. Audio is recorded only while the key is held and transcribed with your OpenAI key. The transcript is only matched against this fixed command list.
 - **Analytics.** Replies, debug cases, estimated time saved, the share of replies edited before sending, replies by mode, common issue types, project types and rewrites, plus a daily activity chart. Only counts are stored, never message text.
+
+## Windows
+
+Everything above works the same on Windows. The differences:
+
+- **Installing.** Run `PastePilot-Setup.exe`. It installs for your user only, so it needs no admin rights. The app isn't code-signed yet, so the first time Windows shows "Windows protected your PC". Click **More info → Run anyway**.
+- **Where it lives.** PastePilot's icon is in the system tray (click **^** next to the clock if it's hidden). Its menu has everything the Mac menu bar has.
+- **No permission to grant.** Windows lets apps read other apps' text through UI Automation without asking, so there's no Accessibility step.
+- **API key** is kept in Windows Credential Manager, under `com.pastepilot.app/openai-api-key`.
+- **Conversation scoping.** The page URL is read from the browser. If it can't be read, the window title is used instead, the same as on Mac.
+
+Built and tested mostly on Chrome and Edge. Electron apps and other browsers may expose less of their text, in which case the reply is copied instead of pasted.
 
 ## Prompt pipeline
 
@@ -217,23 +232,30 @@ src-tauri/src/
   keychain.rs    API key in Keychain
   updater.rs     in-app updates (check, download, verify, install, restart)
   windows.rs     Settings and GitHub Debug windows
+  platform.rs    picks the native layer below; key names for messages (⌥R / Alt+R)
   macos/
     ax.rs             Accessibility: selection, editable check, URL/title, text ranges
     action_bar.rs     native rewrite bar (non-activating panel)
     hud.rs            native status pill
     focus_tracker.rs  remembers the last text input per app
     keys.rs, pasteboard.rs, apps.rs
+  win/            the same functions on Windows
+    ax.rs             UI Automation: selection, editable check, URL/title, text ranges
+    overlay.rs        status pill + rewrite bar as small webview windows that never take focus
+    hud.rs, action_bar.rs, focus_tracker.rs (focus event hook), keys.rs (SendInput), pasteboard.rs, apps.rs, image.rs
+src/overlay/                 the Windows status pill and rewrite bar pages
+.github/workflows/windows.yml  builds the Windows installer for each release
 ```
 
 ## Local storage
 
-All data stays on your Mac, in `~/Library/Application Support/com.pastepilot.app/`:
+All data stays on your computer, in `~/Library/Application Support/com.pastepilot.app/` on Mac or `%APPDATA%\com.pastepilot.app\` on Windows:
 
 | File | Contents |
 |---|---|
 | `pastepilot.db` | SQLite: conversations, messages, reply examples, knowledge base |
 | `settings.json` | settings (no secrets) |
-| Keychain item `com.pastepilot.app` | OpenAI API key |
+| Keychain item `com.pastepilot.app` (Mac) or Credential Manager entry `com.pastepilot.app/openai-api-key` (Windows) | OpenAI API key |
 
 The schema is versioned with `PRAGMA user_version` and migrations run automatically on launch. It lives in `src-tauri/src/db.rs`.
 
@@ -299,12 +321,15 @@ The script does the following:
 4. Writes `latest.json`.
 5. Commits, tags and pushes.
 6. Creates the GitHub release with `PastePilot.app.tar.gz`, `PastePilot.dmg` and `latest.json`.
+7. The pushed tag starts the **Windows** workflow on GitHub Actions. About 15 minutes later it adds `PastePilot-Setup.exe` to the same release and adds Windows to `latest.json`.
 
 Add `--dry-run` to build and sign without publishing anything.
 
 **One-time setup:**
 - **Log in to GitHub:** `gh auth login`.
 - **The signing key** is at `~/.tauri/pastepilot.key`, created once and never committed. The app only installs updates signed with this key. **Back it up**, for example in your password manager. If it's lost, existing installs can't receive updates and would need one manual reinstall with a new key.
+- **Windows builds need the same key** as a GitHub secret: `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/pastepilot.key`.
+- **To test a Windows build without releasing,** go to Actions → Windows → **Run workflow** and pick a branch. The installer is attached to the run.
 
 **How it works:** the app reads `https://github.com/MichelMitri1/pastePilot/releases/latest/download/latest.json` and compares versions. It then downloads `PastePilot.app.tar.gz`, verifies the signature against the public key in `tauri.conf.json`, replaces itself and restarts. It never runs anything unsigned.
 
@@ -334,7 +359,7 @@ If you install a build that isn't signed with the PastePilot certificate, expect
 ### Packages
 
 - **npm:** `react`, `react-dom`, `@tauri-apps/api`, `@tauri-apps/cli`, `vite`, `@vitejs/plugin-react` and `typescript`.
-- **Rust:** `tauri`, `tauri-plugin-global-shortcut`, `tauri-plugin-autostart`, `reqwest`, `rusqlite` (bundled SQLite with FTS5), `security-framework`, `core-graphics` and `objc2-app-kit`.
+- **Rust:** `tauri`, `tauri-plugin-global-shortcut`, `tauri-plugin-autostart`, `reqwest`, `rusqlite` (bundled SQLite with FTS5), `security-framework`, `core-graphics` and `objc2-app-kit` on Mac, and `windows` and `image` on Windows.
 
 ### Environment variables
 
